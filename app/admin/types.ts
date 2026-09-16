@@ -31,4 +31,46 @@ export interface StatusMessage {
   type: "success" | "error" | "info";
 }
 
-export type TabType = "inventario" | "producto" | "roles";
+// Ojo: Si también tienes una pestaña de pedidos, quizás necesites agregar "pedidos" aquí.
+// Lo dejo como lo tenías por precaución:
+export type TabType = "inventario" | "producto" | "roles" | "pedidos"; 
+
+
+// ==========================================
+// NUEVOS TIPOS PARA SOLUCIONAR EL BUILD DE VERCEL
+// ==========================================
+
+export type EstadoPedido = 'pendiente' | 'en despacho' | 'recibido';
+
+export interface PedidoItem {
+  id: number; // o string, dependiendo de cómo guardes el ID del producto en el JSON
+  nombre: string;
+  precio: number;
+  cantidad: number;
+  imagen?: string;
+}
+
+export interface Pedido {
+  id: number;
+  codigo_pedido: string;
+  usuario_id?: string;
+  nombre_cliente: string;
+  email_cliente: string;
+  telefono_cliente: string;
+  region: string;
+  comuna: string;
+  direccion: string;
+  depto?: string;
+  instrucciones?: string;
+  metodo_pago: string;
+  estado: EstadoPedido;
+  subtotal: number;
+  costo_envio: number;
+  total: number;
+  items: PedidoItem[]; 
+  empresa_transporte?: string;
+  numero_seguimiento?: string;
+  notas_despacho?: string;
+  created_at: string;
+  updated_at: string;
+}
