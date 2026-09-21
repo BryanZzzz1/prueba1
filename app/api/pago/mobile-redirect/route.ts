@@ -14,9 +14,11 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const formData = await request.formData();
-  const token_ws = formData.get('token_ws');
-  const tbk_token = formData.get('TBK_TOKEN');
+  // Leemos como texto puro para evitar errores de parseo de Next.js con Webpay
+  const bodyText = await request.text();
+  const params = new URLSearchParams(bodyText);
+  const token_ws = params.get('token_ws');
+  const tbk_token = params.get('TBK_TOKEN');
 
   let targetUrl = '';
 
@@ -28,14 +30,32 @@ export async function POST(request: Request) {
     targetUrl = `suemate://pago/fracaso?motivo=error_desconocido`;
   }
 
-  // Redirección infalible por HTML/JS para evadir el bloqueo de Android
+  // Plantilla HTML a prueba de bloqueos de Android con botón de respaldo
   const html = `
+    <!DOCTYPE html>
     <html>
-      <head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-      <body style="display:flex; justify-content:center; align-items:center; height:100vh; font-family:sans-serif;">
-        <p>Redirigiendo a la aplicación...</p>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Confirmando Pago...</title>
+        <meta http-equiv="refresh" content="0;url=${targetUrl}">
+        <style>
+          body { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; background: #f8f3e9; margin: 0; text-align: center; padding: 20px;}
+          .btn { margin-top: 20px; padding: 15px 30px; background: #314235; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+          h2 { color: #111827; }
+          p { color: #4b5563; }
+        </style>
+      </head>
+      <body>
+        <h2>Procesando tu pago...</h2>
+        <p>Estamos validando la transacción con Webpay.</p>
+        <p>Si la aplicación no se abre automáticamente, presiona el botón de abajo.</p>
+        <a href="${targetUrl}" class="btn" id="redirectBtn">Volver a SuMateCL</a>
         <script>
-          window.location.href = "${targetUrl}";
+          setTimeout(() => {
+            document.getElementById('redirectBtn').click();
+            window.location.href = "${targetUrl}";
+          }, 800);
         </script>
       </body>
     </html>
