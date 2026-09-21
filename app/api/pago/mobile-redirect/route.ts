@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 
-// 1. Maneja Mercado Pago (que retorna vía GET)
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const orden = searchParams.get('orden');
@@ -8,28 +7,39 @@ export async function GET(request: Request) {
   const status = searchParams.get('status'); 
 
   if (status === 'approved') {
-    // Código 303 obliga a redirección segura hacia esquemas custom
     return NextResponse.redirect(`suemate://pago/exito?orden=${orden}&monto=${monto}&metodo=mercadopago`, 303);
   } else {
     return NextResponse.redirect(`suemate://pago/fracaso?motivo=${status}`, 303);
   }
 }
 
-// 2. Maneja Webpay (que retorna vía POST)
 export async function POST(request: Request) {
   const formData = await request.formData();
   const token_ws = formData.get('token_ws');
   const tbk_token = formData.get('TBK_TOKEN');
 
-  // Si existe TBK_TOKEN, significa que el usuario canceló el pago o la tarjeta fue rechazada
+  let targetUrl = '';
+
   if (tbk_token) {
-    return NextResponse.redirect(`suemate://pago/fracaso?motivo=cancelado_webpay`, 303);
+    targetUrl = `suemate://pago/fracaso?motivo=cancelado_webpay`;
+  } else if (token_ws) {
+    targetUrl = `suemate://pago/exito?token_ws=${token_ws}&metodo=webpay`;
+  } else {
+    targetUrl = `suemate://pago/fracaso?motivo=error_desconocido`;
   }
 
-  // Si existe token_ws, el usuario ingresó los datos y debemos ir a Ionic a CONFIRMAR el pago
-  if (token_ws) {
-    return NextResponse.redirect(`suemate://pago/exito?token_ws=${token_ws}&metodo=webpay`, 303);
-  }
+  // Redirección infalible por HTML/JS para evadir el bloqueo de Android
+  const html = `
+    <html>
+      <head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+      <body style="display:flex; justify-content:center; align-items:center; height:100vh; font-family:sans-serif;">
+        <p>Redirigiendo a la aplicación...</p>
+        <script>
+          window.location.href = "${targetUrl}";
+        </script>
+      </body>
+    </html>
+  `;
 
-  return NextResponse.redirect(`suemate://pago/fracaso?motivo=error_desconocido`, 303);
+  return new NextResponse(html, { headers: { 'Content-Type': 'text/html' } });
 }
