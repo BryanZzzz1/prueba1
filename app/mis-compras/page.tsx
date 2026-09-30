@@ -1,0 +1,421 @@
+"use client";
+
+import React, { useEffect, useState, useMemo, useCallback, Suspense } from "react";
+import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
+import { supabase } from "@/src/lib/supabase";
+import { Pedido } from "@/app/admin/types"; // Importante: Verifica que sea la ruta central (ej: "@/types")
+import { usarCarrito } from "@/app/datoscarro/estadocarro";
+import { CompraCard } from "./components/CompraCard";
+import { DetalleCompraView } from "./components/DetalleCompraView";
+
+type FiltroCliente = "todas" | "por_recibir" | "entregadas";
+
+function MisComprasContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pedidoParam = searchParams.get("pedido");
+
+  const { agregarAlCarrito } = usarCarrito();
+
+  const [usuarioId, setUsuarioId] = useState<string | null>(null);
+  const [usuarioEmail, setUsuarioEmail] = useState<string | null>(null);
+  const [cargando, setCargando] = useState(true);
+  const [compras, setCompras] = useState<Pedido[]>([]);
+  const [filtro, setFiltro] = useState<FiltroCliente>("todas");
+  const [busqueda, setBusqueda] = useState("");
+  const [pedidoManualId, setPedidoManualId] = useState<string | number | null>(null);
+  const [mensajeRecompra, setMensajeRecompra] = useState<string | null>(null);
+
+  const pedidoActivo = useMemo(() => {
+    if (compras.length === 0) return null;
+    if (pedidoManualId === -1) return null;
+    if (pedidoManualId !== null) {
+      return compras.find((c) => c.id === pedidoManualId) || null;
+    }
+    if (pedidoParam) {
+      return (
+        compras.find(
+          (c) => c.codigo_pedido.toLowerCase() === pedidoParam.toLowerCase()
+        ) || null
+      );
+    }
+    return null;
+  }, [compras, pedidoManualId, pedidoParam]);
+
+  const cargarCompras = useCallback(async (uid?: string | null, email?: string | null) => {
+    setCargando(true);
+    try {
+      // Si no hay usuario ni correo válido, simplemente detenemos la carga
+      if (!uid && !email) {
+        setCompras([]);
+        setCargando(false);
+        return;
+      }
+
+      let query = supabase
+        .from("pedidos")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      // Filtro seguro: Busca por ID O por Email del cliente
+      if (uid && email) {
+        query = query.or(`usuario_id.eq.${uid},email_cliente.ilike.${email}`);
+      } else if (uid) {
+        query = query.eq("usuario_id", uid);
+      } else if (email) {
+        query = query.ilike("email_cliente", email);
+      }
+
+      const { data, error } = await query;
+
+      if (!error && data && data.length > 0) {
+        setCompras(data as Pedido[]);
+        return;
+      }
+
+      // Respaldo por LocalStorage para usuarios invitados
+      if (typeof window !== "undefined") {
+        const local = localStorage.getItem("somate_pedidos");
+        if (local) {
+          try {
+            const parsed: Pedido[] = JSON.parse(local);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const filtradas = email
+                ? parsed.filter(
+                    (p) =>
+                      p.email_cliente?.toLowerCase() === email.toLowerCase() ||
+                      p.usuario_id === uid
+                  )
+                : parsed;
+              if (filtradas.length > 0) {
+                setCompras(filtradas);
+                return;
+              }
+            }
+          } catch {
+            // Silenciar errores de parseo
+          }
+        }
+      }
+
+      // Si definitivamente no tiene compras
+      setCompras([]);
+    } catch (err) {
+      console.error("Error al cargar compras del cliente:", err);
+      setCompras([]);
+    } finally {
+      setCargando(false);
+    }
+  }, []);
+
+  // Verificar sesión al montar
+  useEffect(() => {
+    async function inicializar() {
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      const uid = user?.id || null;
+      const email = user?.email || null;
+
+      setUsuarioId(uid);
+      setUsuarioEmail(email);
+
+      await cargarCompras(uid, email);
+    }
+
+    inicializar();
+  }, [cargarCompras]);
+
+  // Suscripción a Realtime
+  useEffect(() => {
+    const canal = supabase
+      .channel("mis-compras-cliente-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "pedidos" },
+        (payload) => {
+          if (payload.eventType === "UPDATE") {
+            const actualizado = payload.new as Pedido;
+            setCompras((prev) => {
+              if (prev.some((c) => c.id === actualizado.id)) {
+                return prev.map((c) => (c.id === actualizado.id ? actualizado : c));
+              }
+              return prev;
+            });
+          } else if (payload.eventType === "INSERT") {
+            const nuevo = payload.new as Pedido;
+            const perteneceAlUsuario = 
+              (usuarioId && nuevo.usuario_id === usuarioId) || 
+              (usuarioEmail && nuevo.email_cliente === usuarioEmail);
+            
+            if (perteneceAlUsuario) {
+              setCompras((prev) => {
+                if (prev.some((c) => c.id === nuevo.id)) return prev;
+                return [nuevo, ...prev];
+              });
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(canal);
+    };
+  }, [usuarioId, usuarioEmail]);
+
+  const handleVolverAComprar = (pedido: Pedido) => {
+    if (!pedido.items || pedido.items.length === 0) return;
+
+    pedido.items.forEach((it) => {
+      agregarAlCarrito(
+        {
+          id: String(it.idproducto ?? it.id ?? ""),
+          nombre: it.nombre,
+          precio: it.precio,
+          imagen: it.foto || it.imagen || "",
+        },
+        it.cantidad || 1
+      );
+    });
+
+    setMensajeRecompra(
+      `¡Los artículos de tu compra ${pedido.codigo_pedido} fueron añadidos a tu carrito!`
+    );
+    setTimeout(() => setMensajeRecompra(null), 4000);
+  };
+
+  const conteos = useMemo(() => {
+    const total = compras.length;
+    const porRecibir = compras.filter(
+      (c) => c.estado === "pendiente" || c.estado === "en despacho"
+    ).length;
+    const entregadas = compras.filter((c) => c.estado === "recibido").length;
+    return { total, porRecibir, entregadas };
+  }, [compras]);
+
+  const comprasFiltradas = useMemo(() => {
+    return compras.filter((c) => {
+      if (filtro === "por_recibir") {
+        if (c.estado === "recibido") return false;
+      } else if (filtro === "entregadas") {
+        if (c.estado !== "recibido") return false;
+      }
+
+      if (!busqueda.trim()) return true;
+      const q = busqueda.toLowerCase();
+      const matchCodigo = c.codigo_pedido.toLowerCase().includes(q);
+      const matchItems = c.items?.some((it) => it.nombre.toLowerCase().includes(q));
+      const matchGuia = c.numero_seguimiento?.toLowerCase().includes(q);
+
+      return matchCodigo || matchItems || matchGuia;
+    });
+  }, [compras, filtro, busqueda]);
+
+  return (
+    <div className="site-shell min-h-screen flex flex-col bg-[#f8f3e9]">
+      <header className="border-b border-[#8C7762]/20 bg-white/95 backdrop-blur-md sticky top-0 z-30">
+        <div className="max-w-6xl mx-auto px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4">
+          <Link href="/" className="flex items-center gap-3 group">
+            <img
+              src="/logocircular.png"
+              alt="SuMate Logo"
+              className="h-11 w-auto object-contain transition-transform group-hover:scale-105"
+            />
+            <div>
+              <span className="block brand-serif font-bold tracking-tight text-lg leading-none text-[#1A1A1A]">
+                SuMateCL
+              </span>
+              <span className="block mt-0.5 text-[9px] uppercase tracking-[0.2em] text-[#8C7762] font-bold">
+                Mis Compras & Despachos
+              </span>
+            </div>
+          </Link>
+
+          <div className="flex items-center gap-3 text-xs">
+            <Link
+              href="/"
+              className="text-stone-600 hover:text-[#314235] font-semibold transition"
+            >
+              Catálogo
+            </Link>
+            <Link
+              href="/cuenta"
+              className="px-3 py-1.5 rounded-full bg-[#f8f3e9] border border-stone-200 text-stone-700 font-semibold hover:bg-[#efe7d8] transition flex items-center gap-1.5"
+            >
+              <span className="w-2 h-2 rounded-full bg-[#314235]" />
+              <span>{usuarioEmail ? usuarioEmail.split("@")[0] : "Mi Cuenta"}</span>
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      {mensajeRecompra && (
+        <div className="max-w-6xl mx-auto px-4 sm:px-8 pt-4 w-full">
+          <div className="bg-[#314235] text-white p-4 rounded-2xl text-xs font-semibold flex items-center justify-between gap-3 shadow-lg animate-in fade-in duration-200">
+            <span>{mensajeRecompra}</span>
+            <Link
+              href="/confirmacion-pago"
+              className="px-3 py-1 rounded-full bg-white text-[#314235] font-bold text-[11px] hover:bg-stone-100 transition"
+            >
+              Ir a pagar
+            </Link>
+          </div>
+        </div>
+      )}
+
+      <main className="max-w-6xl mx-auto px-4 sm:px-8 py-8 flex-1 w-full">
+        {pedidoActivo ? (
+          <DetalleCompraView
+            pedido={pedidoActivo}
+            onVolver={() => {
+              setPedidoManualId(-1);
+              if (pedidoParam) router.replace("/mis-compras");
+            }}
+            onVolverAComprar={handleVolverAComprar}
+          />
+        ) : (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h1 className="brand-serif text-2xl sm:text-3xl font-bold text-stone-900">
+                  Mis Compras
+                </h1>
+                <p className="text-xs text-stone-600 mt-1">
+                  Consulta el historial de tus pedidos y realiza el seguimiento de cada paquete en camino.
+                </p>
+              </div>
+
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs font-bold shrink-0 self-start sm:self-auto">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
+                </span>
+                <span>Seguimiento en vivo</span>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-3 border-b border-stone-200">
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
+                <button
+                  type="button"
+                  onClick={() => setFiltro("todas")}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                    filtro === "todas"
+                      ? "bg-[#314235] text-white shadow-xs"
+                      : "bg-white text-stone-600 border border-stone-200 hover:bg-stone-50"
+                  }`}
+                >
+                  Todas ({conteos.total})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFiltro("por_recibir")}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                    filtro === "por_recibir"
+                      ? "bg-[#314235] text-white shadow-xs"
+                      : "bg-white text-stone-600 border border-stone-200 hover:bg-stone-50"
+                  }`}
+                >
+                  Por recibir ({conteos.porRecibir})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFiltro("entregadas")}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                    filtro === "entregadas"
+                      ? "bg-[#314235] text-white shadow-xs"
+                      : "bg-white text-stone-600 border border-stone-200 hover:bg-stone-50"
+                  }`}
+                >
+                  Entregadas ({conteos.entregadas})
+                </button>
+              </div>
+
+              <div className="relative w-full sm:w-72">
+                <input
+                  type="text"
+                  value={busqueda}
+                  onChange={(e) => setBusqueda(e.target.value)}
+                  placeholder="Buscar por producto o código..."
+                  className="w-full text-xs rounded-xl border border-stone-300 bg-white px-3.5 py-2 outline-none focus:border-[#314235] transition"
+                />
+                {busqueda && (
+                  <button
+                    type="button"
+                    onClick={() => setBusqueda("")}
+                    className="absolute right-3 top-2 text-stone-400 hover:text-stone-600 text-xs"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {cargando ? (
+              <div className="py-20 text-center">
+                <div className="w-8 h-8 border-3 border-[#314235] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                <p className="text-xs text-stone-500 font-semibold">Cargando tus compras...</p>
+              </div>
+            ) : comprasFiltradas.length === 0 ? (
+              <div className="py-20 text-center bg-white rounded-3xl border border-stone-200 p-8">
+                <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-[#f8f3e9] flex items-center justify-center text-stone-600">
+                  <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                  </svg>
+                </div>
+                <h3 className="brand-serif text-lg font-bold text-stone-900 mb-1">
+                  {busqueda ? "No encontramos compras con ese término" : "Aún no tienes compras registradas"}
+                </h3>
+                <p className="text-xs text-stone-500 max-w-sm mx-auto mb-6">
+                  {busqueda
+                    ? "Verifica si escribiste bien el nombre del producto o el código del pedido."
+                    : "Explora nuestro catálogo de mates artesanales, bombillas y accesorios para comenzar."}
+                </p>
+                <Link
+                  href="/"
+                  className="inline-block px-6 py-2.5 rounded-full bg-[#314235] hover:bg-[#243127] text-white font-bold text-xs transition shadow-sm"
+                >
+                  Explorar catálogo de mates
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {comprasFiltradas.map((compra) => (
+                  <CompraCard
+                    key={compra.id}
+                    pedido={compra}
+                    onVerDetalle={(p) => setPedidoManualId(p.id)}
+                    onVolverAComprar={handleVolverAComprar}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      <footer className="w-full border-t border-stone-200/80 bg-white mt-16 py-6 text-center text-xs text-stone-500">
+        <p className="font-semibold text-stone-700">SoMateCL • Mates y Accesorios Artesanales</p>
+        <p className="text-[11px] text-stone-400 mt-1">Despachos seguros a todo Chile con tarifa fija de $2.650</p>
+      </footer>
+    </div>
+  );
+}
+
+export default function MisComprasPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#f8f3e9] flex flex-col items-center justify-center p-6 text-center">
+          <div className="w-10 h-10 border-3 border-[#314235] border-t-transparent rounded-full animate-spin mb-4" />
+          <p className="text-sm font-serif font-bold text-[#314235]">Cargando tus compras...</p>
+        </div>
+      }
+    >
+      <MisComprasContent />
+    </Suspense>
+  );
+}
