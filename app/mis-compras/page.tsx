@@ -185,6 +185,33 @@ function MisComprasContent() {
     setTimeout(() => setMensajeRecompra(null), 4000);
   };
 
+  const handleCancelarPedido = async (pedido: Pedido) => {
+    if (confirm("¿Seguro que deseas cancelar este pedido? Se liberarán las unidades a stock general.")) {
+      try {
+        const { error } = await supabase.rpc('cancelar_pedido', {
+          p_codigo_pedido: pedido.codigo_pedido,
+          p_motivo: 'cancelado_por_usuario'
+        });
+        if (error) {
+          console.error("Error al cancelar pedido:", error);
+          alert("Hubo un error al cancelar el pedido.");
+          return;
+        }
+        // En vez de borrarlo, actualizamos su estado para que el usuario vea que fue "Cancelado"
+        setCompras((prev) => 
+          prev.map((c) => 
+            c.codigo_pedido === pedido.codigo_pedido 
+              ? { ...c, estado: "cancelado_por_usuario" as any } 
+              : c
+          )
+        );
+        router.refresh();
+      } catch (err) {
+        console.error("Error al ejecutar cancelar_pedido:", err);
+      }
+    }
+  };
+
   const conteos = useMemo(() => {
     const total = compras.length;
     const porRecibir = compras.filter(
@@ -273,6 +300,11 @@ function MisComprasContent() {
               if (pedidoParam) router.replace("/mis-compras");
             }}
             onVolverAComprar={handleVolverAComprar}
+            onCancelarPedido={(p) => {
+              handleCancelarPedido(p);
+              setPedidoManualId(-1);
+              if (pedidoParam) router.replace("/mis-compras");
+            }}
           />
         ) : (
           <div className="space-y-6">
@@ -389,6 +421,7 @@ function MisComprasContent() {
                     pedido={compra}
                     onVerDetalle={(p) => setPedidoManualId(p.id)}
                     onVolverAComprar={handleVolverAComprar}
+                    onCancelarPedido={handleCancelarPedido}
                   />
                 ))}
               </div>

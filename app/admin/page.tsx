@@ -273,12 +273,24 @@ export default function AdminPage() {
 
   const actualizarEstadoPedido = async (idPedido: string | number, nuevoEstado: EstadoPedido) => {
     try {
-      const { error } = await supabase
-        .from("pedidos")
-        .update({ estado: nuevoEstado, updated_at: new Date().toISOString() })
-        .eq("id", idPedido);
-
-      if (error) console.warn("Actualizando localmente estado de pedido:", error);
+      const pedidoEncontrado = pedidos.find(p => p.id === idPedido);
+      
+      if (["cancelado", "cancelado_por_usuario", "rechazado"].includes(nuevoEstado) && pedidoEncontrado) {
+        // En lugar de update normal, llamamos a la RPC que además repone el stock
+        const { error } = await supabase.rpc('cancelar_pedido', {
+          p_codigo_pedido: pedidoEncontrado.codigo_pedido,
+          p_motivo: nuevoEstado
+        });
+        if (error) throw error;
+        // Refrescar inventario localmente para que se vea el stock devuelto
+        cargarProductos();
+      } else {
+        const { error } = await supabase
+          .from("pedidos")
+          .update({ estado: nuevoEstado, updated_at: new Date().toISOString() })
+          .eq("id", idPedido);
+        if (error) console.warn("Actualizando localmente estado de pedido:", error);
+      }
 
       setPedidos((prev) =>
         prev.map((p) => (p.id === idPedido ? { ...p, estado: nuevoEstado, updated_at: new Date().toISOString() } : p))
@@ -331,7 +343,15 @@ export default function AdminPage() {
       .on("postgres_changes", { event: "*", schema: "public", table: "pedidos" }, () => cargarPedidos())
       .subscribe();
 
-    return () => { supabase.removeChannel(canalPedidos); };
+    const canalProductos = supabase
+      .channel("productos_admin_canal")
+      .on("postgres_changes", { event: "*", schema: "public", table: "producto" }, () => cargarProductos())
+      .subscribe();
+
+    return () => { 
+      supabase.removeChannel(canalPedidos); 
+      supabase.removeChannel(canalProductos);
+    };
   }, [router, cargarCategorias, cargarProductos, cargarUsuarios, cargarPedidos]);
 
   const totalProductos = useMemo(() => productos.length, [productos]);
