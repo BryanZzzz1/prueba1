@@ -61,9 +61,17 @@ export default function CarroDesplegable() {
           </div>
 
           <div className="border-t pt-4">
+            <div className="flex justify-between items-center mb-1 text-sm text-[#1A1A1A]">
+              <span>Subtotal:</span>
+              <span>${total.toLocaleString('es-CL')}</span>
+            </div>
+            <div className="flex justify-between items-center mb-4 text-sm text-[#1A1A1A]">
+              <span>IVA (19%):</span>
+              <span>${Math.round(total * 0.19).toLocaleString('es-CL')}</span>
+            </div>
             <div className="flex justify-between items-center mb-4 text-base font-bold text-[#1A1A1A]">
-              <span>Total:</span>
-              <span className="text-[#8C7762]">${total.toLocaleString('es-CL')}</span>
+              <span>Total a pagar:</span>
+              <span className="text-[#8C7762]">${Math.round(total * 1.19).toLocaleString('es-CL')}</span>
             </div>
 
             <button
