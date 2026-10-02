@@ -70,7 +70,28 @@ function MisComprasContent() {
       const { data, error } = await query;
 
       if (!error && data && data.length > 0) {
-        setCompras(data as Pedido[]);
+        const now = Date.now();
+        const comprasProcesadas = data.map((pedido: any) => {
+          if (pedido.estado?.toLowerCase() === 'pendiente') {
+            const created = new Date(pedido.created_at).getTime();
+            if (now >= created + 5 * 60 * 1000) {
+              // Trigger auto-cancel asynchronously
+              const autoCancelar = async () => {
+                const { error } = await supabase.rpc('cancelar_pedido', {
+                  p_codigo_pedido: pedido.codigo_pedido,
+                  p_motivo: 'cancelado'
+                });
+                if (error) console.error("Error auto-cancelando pedido vencido:", error);
+              };
+              autoCancelar();
+              
+              return { ...pedido, estado: 'cancelado' };
+            }
+          }
+          return pedido;
+        });
+
+        setCompras(comprasProcesadas as Pedido[]);
         return;
       }
 
