@@ -19,7 +19,7 @@ export default function DetalleProductoPage() {
   const [cargando, setCargando] = useState(true);
   const [imagenSeleccionada, setImagenSeleccionada] = useState<string>('');
   const [cantidadCompra, setCantidadCompra] = useState(1);
-  const [colorSeleccionado, setColorSeleccionado] = useState<string>('Café moro');
+
   const [enviosAbierto, setEnviosAbierto] = useState<boolean>(true);
   
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
@@ -292,13 +292,6 @@ export default function DetalleProductoPage() {
               <p className="text-[11px] text-stone-500 mt-1">Envíos rápidos a todo Chile. Calidad premium garantizada.</p>
             </div>
 
-            <div className="space-y-2 mt-1">
-              <label className="text-xs font-semibold text-stone-700 block uppercase tracking-wider">Tone / Color</label>
-              <div className="flex gap-3">
-                <button type="button" onClick={() => setColorSeleccionado('Café moro')} className={`px-5 py-2 rounded-full text-xs font-bold transition cursor-pointer border ${colorSeleccionado === 'Café moro' ? 'bg-[#8C7762] text-white border-[#8C7762] shadow-sm' : 'bg-white text-stone-700 border-[#8C7762]/30 hover:bg-[#8C7762]/5'}`}>Café moro</button>
-                <button type="button" onClick={() => setColorSeleccionado('Negro')} className={`px-5 py-2 rounded-full text-xs font-bold transition cursor-pointer border ${colorSeleccionado === 'Negro' ? 'bg-stone-900 text-white border-stone-900 shadow-sm' : 'bg-white text-stone-700 border-[#8C7762]/30 hover:bg-[#8C7762]/5'}`}>Negro Premium</button>
-              </div>
-            </div>
 
             <div className="space-y-3 mt-2">
               <label className="text-xs font-semibold text-stone-700 block uppercase tracking-wider">Cantidad</label>
@@ -311,8 +304,8 @@ export default function DetalleProductoPage() {
               </div>
 
               <div className="flex flex-col gap-2.5 pt-2">
-                <button onClick={() => { if (!producto) return; agregarAlCarrito({ id: String(producto.idproducto || id), nombre: `${producto.nombre} (${colorSeleccionado})`, precio: Number(producto.precio || 0), imagen: imagenSeleccionada || producto.imagenes?.[0] || producto.foto || '/placeholder.png' }, cantidadCompra); }} className="w-full bg-[#8C7762] hover:bg-[#785C3A] text-white text-xs font-bold py-3.5 rounded-full transition uppercase tracking-wider shadow-sm cursor-pointer">Añadir al carrito</button>
-                <button onClick={() => { if (!producto) return; agregarAlCarrito({ id: String(producto.idproducto || id), nombre: `${producto.nombre} (${colorSeleccionado})`, precio: Number(producto.precio || 0), imagen: imagenSeleccionada || producto.imagenes?.[0] || producto.foto || '/placeholder.png' }, cantidadCompra); setCarritoAbierto(true); }} className="w-full bg-[#527953] hover:bg-[#436444] text-white text-xs font-bold py-3.5 rounded-full transition uppercase tracking-wider shadow-sm cursor-pointer">Comprar ahora</button>
+                <button onClick={() => { if (!producto) return; agregarAlCarrito({ id: String(producto.idproducto || id), nombre: producto.nombre || 'Producto', precio: Number(producto.precio || 0), imagen: imagenSeleccionada || producto.imagenes?.[0] || producto.foto || '/placeholder.png' }, cantidadCompra); }} className="w-full bg-[#8C7762] hover:bg-[#785C3A] text-white text-xs font-bold py-3.5 rounded-full transition uppercase tracking-wider shadow-sm cursor-pointer">Añadir al carrito</button>
+                <button onClick={() => { if (!producto) return; agregarAlCarrito({ id: String(producto.idproducto || id), nombre: producto.nombre || 'Producto', precio: Number(producto.precio || 0), imagen: imagenSeleccionada || producto.imagenes?.[0] || producto.foto || '/placeholder.png' }, cantidadCompra); setCarritoAbierto(true); }} className="w-full bg-[#527953] hover:bg-[#436444] text-white text-xs font-bold py-3.5 rounded-full transition uppercase tracking-wider shadow-sm cursor-pointer">Comprar ahora</button>
               </div>
             </div>
 
