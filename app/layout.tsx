@@ -4,6 +4,10 @@ import { ProveedorCarrito } from "./datoscarro/estadocarro";
 import CarroDesplegable from "./datoscarro/carrodesplegable";
 import { AuthProvider } from "@/src/lib/context/AuthContext";
 
+// 1. Importación del Chatbot flotante
+// Ajusta la ruta si guardaste el archivo en otra ubicación (ej: "@/app/components/ChatFlotante")
+import ChatFlotante from "./components/ChatFlotante";
+
 export const metadata: Metadata = {
   title: "SuMate | Mates y Accesorios Artesanales",
   description: "E-Commerce y Gestión Integral de Inventario para SuMate / SuMateCL",
@@ -25,6 +29,9 @@ export default function RootLayout({
           <AuthProvider>{children}</AuthProvider>
           <CarroDesplegable />
         </ProveedorCarrito>
+
+        {/* 2. Componente inyectado globalmente */}
+        <ChatFlotante />
       </body>
     </html>
   );
