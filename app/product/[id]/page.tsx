@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/src/lib/supabase';
 import { usarCarrito, ItemCarrito } from "@/app/datoscarro/estadocarro";
 import SubNavbar from '@/app/components/SubNavbar';
 import BarraBusquedaNav from '@/app/components/BarraBusquedaNav';
+import ResenasProducto from './components/ResenasProducto';
 
 export default function DetalleProductoPage() {
   const { carrito, carritoAbierto, setCarritoAbierto, eliminarDelCarrito, total, agregarAlCarrito } = usarCarrito(); 
@@ -23,6 +24,12 @@ export default function DetalleProductoPage() {
   const [enviosAbierto, setEnviosAbierto] = useState<boolean>(true);
   
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
+
+  const [resumenResenas, setResumenResenas] = useState({ cantidad: 0, promedio: 0 });
+  const manejarResumenResenas = useCallback(
+    (cantidad: number, promedio: number) => setResumenResenas({ cantidad, promedio }),
+    []
+  );
 
   useEffect(() => {
     async function verificarPermisos() {
@@ -162,7 +169,7 @@ export default function DetalleProductoPage() {
           </Link>
 
           {/* CENTRO: Barra de búsqueda en el Navbar */}
-          <div className="flex-1 max-w-md mx-1 sm:mx-4">
+          <div className="flex-1 min-w-0 max-w-md mx-0 sm:mx-4">
             <BarraBusquedaNav
               placeholder="Buscar mates, bombillas, termos..."
             />
@@ -232,8 +239,8 @@ export default function DetalleProductoPage() {
       </header>
 
       {/* SECCIÓN PRINCIPAL DE PRODUCTO */}
-      <main className="max-w-5xl mx-auto px-6 pt-10 pb-16">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-start">
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 sm:pt-10 pb-16">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 items-start">
           
           {/* GALERÍA DE IMÁGENES (CARRUSEL FUNCIONAL) */}
           <div className="flex flex-col gap-4">
@@ -287,6 +294,19 @@ export default function DetalleProductoPage() {
 
             <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-stone-900 leading-tight">{producto.nombre}</h1>
 
+            <a href="#resenas" className="flex items-center gap-2 text-xs w-fit">
+              <span className="text-base tracking-tight">
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <span key={s} className={s <= Math.round(resumenResenas.promedio) ? 'text-[#ffc107]' : 'text-stone-300'}>★</span>
+                ))}
+              </span>
+              <span className="text-stone-500 hover:underline">
+                {resumenResenas.cantidad > 0
+                  ? `${resumenResenas.promedio.toFixed(1)} · ${resumenResenas.cantidad} ${resumenResenas.cantidad === 1 ? 'reseña' : 'reseñas'}`
+                  : 'Sin reseñas aún'}
+              </span>
+            </a>
+
             <div className="border-b border-[#8C7762]/15 pb-4">
               <div className="flex items-baseline gap-3"><p className="text-3xl font-bold text-[#527953]">${producto.precio?.toLocaleString('es-CL')}</p><span className="text-xs text-stone-400">CLP</span></div>
               <p className="text-[11px] text-stone-500 mt-1">Envíos rápidos a todo Chile. Calidad premium garantizada.</p>
@@ -323,8 +343,11 @@ export default function DetalleProductoPage() {
           </div>
         </div>
 
+        {/* RESEÑAS DE LA COMUNIDAD */}
+        <ResenasProducto idproducto={producto.idproducto ?? String(id)} onResumen={manejarResumenResenas} />
+
         {/* BLOQUE INFORMATIVO DE ENVÍOS */}
-        <div className="mt-16 bg-white border border-[#8C7762]/15 rounded-3xl p-6 sm:p-8 shadow-sm">
+        <div className="mt-10 sm:mt-16 bg-white border border-[#8C7762]/15 rounded-2xl sm:rounded-3xl p-4 sm:p-8 shadow-sm">
           <span className="text-[10px] uppercase tracking-widest text-[#8C7762] font-bold block mb-1">Garantía SuMateCL</span>
           <h2 className="text-xl font-bold text-stone-900 mb-6">Información de Envíos & Cuidados</h2>
 

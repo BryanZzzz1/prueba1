@@ -1,6 +1,6 @@
 # 📘 Informe Completo de Arquitectura e Implementación: GrowderWeb (SuMateCL)
 
-> **Fecha de Actualización:** 25 de Octubre de 2026  
+> **Fecha de Actualización:** 28 de Octubre de 2026  
 > **Plataforma:** GrowderWeb — SuMateCL (Next.js 16.3.4 App Router / React 19.2.8 / Supabase / Tailwind CSS v4)  
 > **Sistemas Analizados:**  
 > 1. `Tienda B2C & Carrito Híbrido` (Navegación, Catálogo Dinámico, Sincronización Local/Nube y Deep Linking Móvil)  
@@ -10,6 +10,7 @@
 > 5. `Panel de Administración Back-Office` (Inventario, Galería WebP al 70%, Roles RBAC y WhatsApp Directo)  
 > 6. `Sistema Logístico de Bodega & Control de Calidad` (Inspección de Incidencias en `incidencias_bodega`)  
 > 7. `Portal de Cliente & Trazabilidad Realtime` (Seguimiento Stepper con Suscripción Postgres Changes)  
+> 8. `Asistente Virtual con IA (Chatbot)` (Widget flotante, Vercel AI Gateway, Cerebro de IA configurable y Base de Conocimiento en `/admin/chatbot`)  
 > **Autoría / Contexto:** Auditoría Técnica de Arquitectura, Ingeniería de Software, Persistencia y Experiencia Transaccional.
 
 ---
@@ -23,6 +24,7 @@
    - 3.2 Portada Principal Dinámica y Carrusel Publicitario Desacoplado
    - 3.3 Motor de Búsqueda Paramétrico y Filtros Facetados (`/buscar`)
    - 3.4 Vista Detallada de Producto y Galería Interactiva (`/product/[id]`)
+   - 3.5 Reseñas y Calificaciones de Producto (paridad con la app Ionic)
 4. [Módulo de Carrito Híbrido: Sincronización Local / Cloud](#4-módulo-de-carrito-híbrido-sincronización-local--cloud)
    - 4.1 Dominio y Tipos del Carrito (`ItemCarrito`)
    - 4.2 Arquitectura de Doble Capa: Invitado (`localStorage`) vs Nube (`supabase.carrito`)
@@ -62,12 +64,26 @@
     - 10.2 Componente Stepper de Seguimiento Logístico (5 Fases + Incidencias)
     - 10.3 Suscripción Reactiva Supabase Realtime (`postgres_changes`)
     - 10.4 Botón de Recompra Rápida y Auto-Cancelación de Pedidos Huérfanos
+    - 10.5 Imágenes de Producto en Pedidos y Limpieza de Compras sin Completar
 11. [Modelo de Datos y Esquema Supabase](#11-modelo-de-datos-y-esquema-supabase)
     - 11.1 Diagrama Entidad-Relación Lógico
     - 11.2 Definición de Tablas Principales
     - 11.3 Procedimientos Almacenados (Funciones RPC)
 12. [Matriz Técnica Comparativa de Módulos y Resiliencia](#12-matriz-técnica-comparativa-de-módulos-y-resiliencia)
 13. [Auditoría de Rendimiento, Seguridad y Recomendaciones de Evolución](#13-auditoría-de-rendimiento-seguridad-y-recomendaciones-de-evolución)
+14. [Asistente Virtual con IA: Chatbot SuMate Bot y Cerebro de IA](#14-asistente-virtual-con-ia-chatbot-sumate-bot-y-cerebro-de-ia)
+    - 14.1 Visión General y Mapa de Archivos
+    - 14.2 Widget Flotante del Cliente (`ChatFlotante.tsx`)
+    - 14.3 Endpoint de Conversación (`/api/chat`): Pipeline de Respuesta
+    - 14.4 Sistema de Conmutación Preset vs Cerebro de IA
+    - 14.5 Inyección de Datos en Tiempo Real (Pedidos y Catálogo)
+    - 14.6 Candado Temático, Herramienta `consultarEstadoPedido` y Persistencia
+    - 14.7 Panel Admin "Cerebro de IA" (`/admin/chatbot`) y Extracción de PDF
+    - 14.8 Modelo de Datos del Chatbot
+    - 14.9 Hallazgos de Auditoría y Mejoras Propuestas
+    - 14.10 Doble Identidad por Contexto: Bot de Cliente vs Bot de Backoffice
+    - 14.11 Herramientas Operativas del Backoffice y Controles de Seguridad
+    - 14.12 Privacidad: Audiencia de Documentos y Pedidos Solo para su Dueño
 
 ---
 
@@ -83,6 +99,7 @@ A diferencia de soluciones monolíticas tradicionales o tiendas de plantilla est
 - **Puente con Ecosistema Móvil:** Soporte de redirección por *Deep Linking* hacia esquemas nativos `suemate://` para flujos iniciados desde aplicaciones móviles Android / iOS.
 - **Operación Back-Office Segmentada:** Paneles administrativos dedicados para gerencia (`/admin`) y operarios de almacén (`/bodega`), blindados contra dispositivos móviles para garantizar una ergonomía y control de inventario rigurosos.
 - **Trazabilidad en Tiempo Real:** El comprador puede visualizar el avance de su pedido etapa por etapa con un componente Stepper conectado mediante WebSockets a Supabase Realtime.
+- **Asistente Virtual con IA (SuMate Bot):** Chatbot flotante en toda la tienda, basado en Vercel AI SDK y Vercel AI Gateway (`gpt-4o-mini`), que responde consultas de catálogo, envíos y rastreo de pedidos `SM-XXXXXX` con datos reales de Supabase. Su personalidad y conocimiento se administran desde el panel `/admin/chatbot` ("Cerebro de IA"). Tiene **dos identidades según el contexto**: asesor de ventas en la tienda y asistente operativo dentro de `/admin` y `/bodega`, donde además puede ejecutar operaciones (con permisos y confirmación validados en el servidor).
 
 ---
 
@@ -106,6 +123,9 @@ graph TB
         ADMIN_PORTAL["Portal Admin<br/>(/admin, Inventario, Roles, Pedidos)"]
         BODEGA_PORTAL["Portal Bodega<br/>(/bodega, Control de Calidad)"]
         CUSTOMER_PORTAL["Portal Cliente<br/>(/cuenta, /mis-compras, Stepper)"]
+        CHAT_WIDGET["ChatFlotante<br/>(Widget global en layout.tsx)"]
+        CHAT_ADMIN["Cerebro de IA<br/>(/admin/chatbot)"]
+        CHAT_API["/api/chat (streamText)<br/>/api/admin/chatbot/extraer-pdf"]
 
         API_ROUTES["Route Handlers (Serverless)<br/>/api/webpay/*, /api/mercadopago/*<br/>/api/reserva/*, /api/email/*"]
     end
@@ -115,6 +135,7 @@ graph TB
         SB_DB[("PostgreSQL Database<br/>producto, pedidos, reservas,<br/>carrito, incidencias_bodega")]
         SB_REALTIME["Supabase Realtime Engine<br/>(Canal: mis-compras-cliente-realtime)"]
         SB_RPC["Funciones Almacenadas (RPC)<br/>confirmar_pago_pedido, cancelar_pedido,<br/>crear_reserva_stock, completar_reserva"]
+        SB_CHATDB[("Tablas del Chatbot<br/>chatbot_config, chatbot_documentos,<br/>chatbot_mensajes")]
     end
 
     subgraph Pasarelas ["Pasarelas Financieras y Servicios Externos"]
@@ -122,6 +143,7 @@ graph TB
         MP["Mercado Pago API<br/>(Checkout Pro Preferences)"]
         SMTP_GMAIL["Servidor SMTP Gmail<br/>(Nodemailer TLS :587)"]
         NGROK["Túnel Ngrok Dev<br/>(fondling-bottling-explore.ngrok-free.dev)"]
+        VGATEWAY["Vercel AI Gateway<br/>(OpenAI gpt-4o-mini)"]
     end
 
     WEB_DESKTOP --> STORE_UI
@@ -144,6 +166,13 @@ graph TB
     AUTH_CTX <== "Auth Listener" ==> SB_AUTH
 
     NGROK -.->|"Dev Webhooks / Return"| API_ROUTES
+
+    STORE_UI --> CHAT_WIDGET
+    CHAT_WIDGET <== "Stream UI Messages" ==> CHAT_API
+    CHAT_ADMIN --> CHAT_API
+    CHAT_API <== "OpenAI-compatible" ==> VGATEWAY
+    CHAT_API <== "Service Role" ==> SB_CHATDB
+    CHAT_API --> SB_DB
 ```
 
 ### Principios Fundamentales del Sistema
@@ -168,7 +197,9 @@ app/
 │       ├── FiltrosBusqueda.tsx        # Selector de ordenamiento y categorías
 │       └── GridResultados.tsx         # Rejilla adaptativa con tarjetas de producto
 ├── product/[id]/
-│   └── page.tsx                       # Ficha técnica, carrusel de fotos y selector de unidades
+│   ├── page.tsx                       # Ficha técnica, carrusel de fotos, selector de unidades y resumen de estrellas
+│   └── components/
+│       └── ResenasProducto.tsx        # Calificaciones, reseñas y respuestas (tablas resena / respuestas)
 └── components/
     ├── SubNavbar.tsx                  # Navegación secundaria con categorías desde BD
     └── BarraBusquedaNav.tsx           # Input de búsqueda universal con botón limpiador
@@ -224,6 +255,20 @@ En [`app/product/[id]/page.tsx`](file:///f:/Growder/GROWDER/Desarrollo%20App%20y
 - **Carga de Galería Combinada:** Prioriza la fotografía principal del registro (`producto.foto`) y añade secuencialmente todas las imágenes asociadas en la tabla `imagenes` deduplicando URLs.
 - **Manejo de Estados de Carga y Error Elegante:** Si el producto no existe o fue dado de baja, renderiza una pantalla integrada que mantiene la cabecera corporativa e invita a explorar el resto de la colección, evitando pantallazos de error 404 abruptos.
 - **Selector de Cantidades:** Limita la selección máxima a la cantidad disponible en el stock real (`producto.cantidad`).
+- **Resumen de Valoración:** Bajo el título se muestran las estrellas, el promedio y el número de reseñas (p. ej. *4.5 · 3 reseñas*, o *Sin reseñas aún*); el enlace baja a la sección de reseñas.
+
+### 3.5 Reseñas y Calificaciones de Producto (paridad con la app Ionic)
+
+Implementado en [`app/product/[id]/components/ResenasProducto.tsx`](file:///f:/Growder/GROWDER/Desarrollo%20App%20y%20Web/GrowderWeb/app/product/%5Bid%5D/components/ResenasProducto.tsx), replicando el comportamiento de `DtproductoPage` / `ReviewService` de la aplicación móvil y **compartiendo las mismas tablas de Supabase**, por lo que una reseña escrita en la app aparece en la web y viceversa.
+
+- **Calificación 1 a 5 estrellas:** selector interactivo; el envío exige al menos 1 estrella y texto.
+- **Reseñas:** tarjeta con avatar (inicial del nombre), autor, estrellas, texto e insignia *Compra verificada*. Listado ascendente por `id`.
+- **Hilo de respuestas anidado:** cada reseña admite réplicas (`respuestas`); si una respuesta no trae autor se muestra *Growder Team*. Se envían con botón o con Enter.
+- **Sesión:** sin sesión se ve el listado y un enlace a `/login`; para escribir o responder se requiere sesión. El nombre visible es el primer nombre de `user_metadata` (`nombre`, `full_name` o `name`) o, en su defecto, la parte local del correo.
+- **Sección desplegable** (*Reseñas (N)*, abierta por defecto) con avisos temporales de validación y error.
+- **Tablas:** `resena` (`id`, `idproducto`, `username`, `texto`, `calificacion`, `user_id`, `creado_en`) y `respuestas` (`id_resena`, `respuesta_username`, `respuesta_texto`, `user_id`).
+- **Nota técnica:** la fecha de la reseña se llama `creado_en` (no `created_at`); por eso las consultas ordenan por `id`, columna presente en ambas tablas.
+- **Pendiente de endurecer:** la insignia *Compra verificada* se muestra en todas las reseñas (igual que en la app) sin comprobar que el autor haya comprado el producto.
 
 ---
 
@@ -263,6 +308,7 @@ El carrito opera con dos estrategias de persistencia según el estado de la sesi
 2. **Modo Usuario Autenticado (Con Sesión):**
    - La verdad del carrito reside en la tabla `public.carrito` de Supabase vinculada por `user_id`.
    - Cada inserción o actualización se refleja de manera persistente en base de datos.
+   - La tabla `carrito` no almacena fotografías: al cargar el carrito desde la nube, `obtenerFotosProductos()` ([`src/lib/imagenesProducto.ts`](file:///f:/Growder/GROWDER/Desarrollo%20App%20y%20Web/GrowderWeb/src/lib/imagenesProducto.ts)) resuelve la imagen real de cada producto (tabla `imagenes`, con `producto.foto` de respaldo). Antes se usaba un *placeholder* inexistente que quedaba grabado en los pedidos (ver 10.5).
 
 ### 4.3 Algoritmo de Fusión Automática (*Merge*) post Inicio de Sesión
 
@@ -585,6 +631,19 @@ En [`app/mis-compras/page.tsx`](file:///f:/Growder/GROWDER/Desarrollo%20App%20y%
 - **Recompra en 1 Clic (`handleVolverAComprar`):** Itera todos los productos del pedido histórico y los inyecta en el carrito activo, facilitando reordenar yerba mate, accesorios o reposiciones.
 - **Auto-Cancelación de Huérfanos:** Si un pedido quedó en estado `pendiente` por más de 5 minutos (300 segundos), la vista detecta el vencimiento y ejecuta en segundo plano `cancelar_pedido` liberando el stock a la tienda.
 
+### 10.5 Imágenes de Producto en Pedidos y Limpieza de Compras sin Completar
+
+**Imágenes de productos comprados.** El pedido guarda sus productos tal como estaban en el carrito (`items: carrito`), donde la foto se llama `imagen`, pero las vistas leían `foto`; además, los pedidos hechos con sesión iniciada habían guardado una ruta *placeholder* inexistente. Solución:
+- **Helper compartido** [`src/lib/imagenesProducto.ts`](file:///f:/Growder/GROWDER/Desarrollo%20App%20y%20Web/GrowderWeb/src/lib/imagenesProducto.ts): `obtenerFotosProductos(ids)` consulta `imagenes` (con `producto.foto` de respaldo) y guarda los resultados en una caché de módulo; el hook `useFotosItems(items)` devuelve una función que resuelve la foto de cada ítem (`foto` → `imagen` → búsqueda por id) **ignorando las rutas `placeholder-mate`**.
+- **Vistas corregidas:** `CompraCard` (listado de Mis compras), `DetalleCompraView` (detalle) y `PedidoDetalleModal` (consola de pedidos del admin). Los pedidos antiguos recuperan su foto sin migrar datos.
+- **Origen corregido:** `estadocarro.tsx` ya no inventa el *placeholder* y carga la foto real al leer el carrito de la nube (ver 4.2).
+- **Limitación:** los ítems que no guardaron un `id` de producto identificable (p. ej. pedidos históricos como *Pack de Mates y Accesorios*) siguen mostrando el ícono genérico.
+
+**Limpieza de compras sin completar.** En `/mis-compras`, cuando existen pedidos `cancelado`, `cancelado_por_usuario` o `rechazado`, aparece una barra con el botón *Limpiar compras*:
+- **Selección:** al activarlo, solo esos pedidos muestran un *checkbox*; hay *Seleccionar todas* y contador.
+- **Borrado:** *Quitar seleccionadas (N)* pide confirmación y ejecuta `DELETE` sobre `pedidos` filtrando por `id` **y** por estado cancelado/rechazado (nunca elimina pedidos pagados o en curso). Si Supabase no devuelve filas (p. ej. por políticas RLS) se informa el error y no se altera la lista.
+- **Efecto:** el borrado es real (la fila desaparece también del backoffice). Si se prefiere conservar el registro, la alternativa es un campo de "ocultar" en lugar de `DELETE`.
+
 ---
 
 ## 11. Modelo de Datos y Esquema Supabase
@@ -599,6 +658,10 @@ erDiagram
     PRODUCTO ||--o{ IMAGENES : "contiene"
     PEDIDOS ||--o{ INCIDENCIAS_BODEGA : "reporta"
     USUARIO ||--o{ RESERVAS_STOCK : "reserva"
+    CHATBOT_CONVERSACION ||--o{ CHATBOT_MENSAJES : "contiene"
+    PRODUCTO ||--o{ RESENA : "recibe"
+    USUARIO ||--o{ RESENA : "escribe"
+    RESENA ||--o{ RESPUESTAS : "tiene"
 
     USUARIO {
         uuid id PK
@@ -685,6 +748,49 @@ erDiagram
         string estado_aviso
         timestamp created_at
     }
+
+    RESENA {
+        int id PK
+        int idproducto FK
+        uuid user_id FK
+        string username
+        text texto
+        int calificacion
+        timestamp creado_en
+    }
+
+    RESPUESTAS {
+        int id PK
+        int id_resena FK
+        uuid user_id FK
+        string respuesta_username
+        text respuesta_texto
+    }
+
+    CHATBOT_CONFIG {
+        int id PK "siempre 1"
+        text instrucciones_cliente
+        text instrucciones_interno
+        numeric temperatura
+        timestamp updated_at
+    }
+
+    CHATBOT_DOCUMENTOS {
+        uuid id PK
+        string titulo
+        text contenido
+        boolean activo
+        string audiencia "cliente | interno | ambos"
+        timestamp created_at
+    }
+
+    CHATBOT_MENSAJES {
+        uuid id PK
+        string conversacion_id
+        string rol "user | assistant"
+        text contenido
+        timestamp created_at
+    }
 ```
 
 ### 11.2 Procedimientos Almacenados (Funciones RPC en PostgreSQL)
@@ -733,6 +839,225 @@ erDiagram
    - En `/buscar` y en la portada principal, el catálogo actual consulta la totalidad de los productos activos. A medida que el inventario supere las 500 referencias, convendrá implementar paginación mediante `.range(desde, hasta)` en Supabase.
 4. **Habilitación de Строгий Linting y Tipado en Build:**
    - En `next.config.ts`, la regla `typescript: { ignoreBuildErrors: true }` está activa para facilitar iteraciones ágiles. Se sugiere auditar y normalizar los tipos de datos restantes para reactivar la verificación estricta en el pipeline de despliegue continuo.
+
+---
+
+## 14. Asistente Virtual con IA: Chatbot SuMate Bot y Cerebro de IA
+
+### 14.1 Visión General y Mapa de Archivos
+
+El chatbot es un asistente conversacional con respuesta en *streaming* que atiende a dos audiencias con el mismo endpoint: **clientes** de la tienda y **equipo interno** (Admin / Editor). Combina tres fuentes de contexto en cada petición: directrices de comportamiento, conocimiento documental y datos en vivo de Supabase.
+
+```
+app/
+├── layout.tsx                                  # Monta <ChatFlotante /> de forma global
+├── components/
+│   └── ChatFlotante.tsx                        # Widget flotante (UI, streaming, markdown ligero)
+├── api/
+│   ├── chat/route.ts                           # Endpoint principal: contexto, identidad, herramientas
+│   └── admin/chatbot/extraer-pdf/route.ts      # Extracción de texto de PDF / TXT (pdf-parse)
+└── admin/
+    ├── chatbot/page.tsx                        # Panel "Cerebro de IA" (con audiencia por documento)
+    └── components/AdminHeader.tsx              # Enlace "Gestión de IA" en el menú superior
+supabase/
+└── chatbot_audiencia.sql                       # Migración: columna `audiencia` en chatbot_documentos
+```
+
+**Stack:** Vercel AI SDK (`ai`, `@ai-sdk/react`, `@ai-sdk/openai`), Vercel AI Gateway (`https://ai-gateway.vercel.sh/v1`) con el modelo `gpt-4o-mini`, `zod` para el esquema de herramientas, `pdf-parse` para documentos y `blobatar` / `@blobatar/react` para el avatar animado.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as Usuario
+    participant W as ChatFlotante (cliente)
+    participant API as /api/chat
+    participant SB as Supabase (service role)
+    participant GW as Vercel AI Gateway (gpt-4o-mini)
+
+    U->>W: Escribe consulta o código SM-XXXXXX
+    W->>API: POST { messages, sessionToken, conversacionId }
+    par Consultas en paralelo
+        API->>SB: auth.getUser(sessionToken)
+        API->>SB: chatbot_config (id = 1)
+        API->>SB: chatbot_documentos (activo = true)
+        API->>SB: pedidos (si se detectó código)
+        API->>SB: producto (si es consulta de catálogo)
+    end
+    API->>SB: usuario.rol_id (si hay sesión)
+    API->>API: Construye system prompt (identidad + candado + conocimiento + datos vivos)
+    API->>GW: streamText(system, messages, tools)
+    GW-->>W: Stream de UI messages (tokens)
+    API->>SB: INSERT chatbot_mensajes (onFinish)
+```
+
+### 14.2 Widget Flotante del Cliente (`ChatFlotante.tsx`)
+
+- **Presencia Global:** Renderizado desde `app/layout.tsx` (dentro de `ProveedorCarrito`), disponible en toda la web como un **avatar animado** en la esquina inferior derecha que despliega el panel de chat.
+- **Avatar Blobatar:** generado con `@blobatar/react` (nombre `SuMate Bot`, silueta *sun*, expresión *thinking*, paleta marrón `#7c6b53` con ojos crema del logo). Los ojos **siguen al cursor** (`useGaze`) y el avatar parpadea y respira; respeta `prefers-reduced-motion`. En la cabecera del chat va dentro de un círculo blanco; los avatares de los mensajes usan `blobatarUri` (SVG local, sin depender de servicios externos).
+- **Diseño Responsivo:** en escritorio el panel mide 380×560 px; en pantallas < 640 px ocupa toda la pantalla (`100dvh`, bloqueo del scroll de fondo, campo de texto a 16 px para evitar el zoom de iOS y margen para el área segura de iPhone).
+- **Reglas de Visibilidad:** el widget se oculta mientras el **carrito está abierto** (sin perder la conversación) y en `/admin` / `/bodega` con ancho < 1024 px, donde el panel muestra "Acceso restringido en móvil".
+- **Contexto Visual:** en backoffice cambia título (*Asistente Backoffice*), bienvenida, placeholder y botones rápidos (ver 14.10).
+- **Transporte y Sesión:** Usa `useChat` con `DefaultChatTransport` hacia `/api/chat`. En cada petición envía `sessionToken` (JWT de Supabase Auth, actualizado con `onAuthStateChange`) y `conversacionId`.
+- **Identificador de Conversación:** UUID generado con `crypto.randomUUID()` y persistido en `sessionStorage` (`sumate_chat_conv_id`), de modo que el historial se agrupa por pestaña/sesión de navegador.
+- **Mensaje de Bienvenida Local:** Mientras no hay mensajes, muestra una bienvenida estática (no consume tokens) con las tres capacidades: rastreo, catálogo y envíos.
+- **Acciones Rápidas:** Tres *chips* de pregunta predefinida: *Rastrear pedido*, *Envíos ($2.650)* y *Ver mates*.
+- **Renderizador Markdown Ligero:** Interpreta `**negritas**`, listas con viñetas y enlaces `[texto](/ruta)`, que se transforman en botones corporativos verdes con ícono. Esto permite que el bot dirija al cliente a `/mis-compras` con un clic.
+- **Estados de Carga:** Indicador *"Consultando en SuMateCL..."* durante `submitted` / `streaming`; el envío se bloquea mientras hay respuesta en curso. Auto-scroll al último mensaje.
+
+### 14.3 Endpoint de Conversación (`/api/chat`): Pipeline de Respuesta
+
+Ubicado en [`app/api/chat/route.ts`](file:///f:/Growder/GROWDER/Desarrollo%20App%20y%20Web/GrowderWeb/app/api/chat/route.ts). Etapas de cada petición:
+
+1. **Normalización de mensajes:** Acepta tanto `content` (string) como `parts` (formato UI Message) y descarta mensajes vacíos.
+2. **Detección heurística sobre el último mensaje:**
+   - *Código de pedido:* expresión regular `(?:sm-)?(\d{5,8})` → normaliza a `SM-XXXXXX`.
+   - *Intención de catálogo:* palabras clave (`precio`, `mate`, `bombilla`, `termo`, `yerba`, `stock`, `catálogo`, `disponible`, `comprar`, etc.).
+3. **Consultas paralelas con `Promise.all`:** usuario autenticado, configuración, documentos, pedido y catálogo, reduciendo la latencia previa a la llamada al modelo.
+4. **Resolución de rol y contexto:** si hay sesión válida se lee `usuario.rol_id`; por defecto es `3` (Cliente). El **modo backoffice** requiere ruta `/admin` o `/bodega` (enviada por el widget en `pathname`) **y** rol 1 o 2 verificado en el servidor (ver 14.10).
+5. **Ensamblado del *system prompt*:** `identidad + candado temático + conocimiento + datos en tiempo real`.
+6. **Generación en *streaming*:** `streamText` con `temperature` configurable (por defecto `0.5`), `maxOutputTokens: 550` y `stopWhen: stepCountIs(5)`.
+7. **Persistencia diferida:** en `onFinish` guarda el par pregunta/respuesta en `chatbot_mensajes`.
+
+### 14.4 Sistema de Conmutación Preset vs Cerebro de IA
+
+El diseño evita que el bot quede "mudo" o sin criterio cuando el administrador aún no ha configurado nada. Cada bloque tiene dos modos independientes:
+
+| Bloque | Modo **Cerebro de IA** (personalizado) | Modo **Preset** (por defecto) |
+| :--- | :--- | :--- |
+| **Identidad / Tono** | Se activa si `chatbot_config.instrucciones_cliente` (o `_interno`) tiene texto distinto del placeholder de la UI | `PRESET_IDENTIDAD_CLIENTE` o `PRESET_IDENTIDAD_INTERNO` |
+| **Conocimiento** | Se activa si existe ≥ 1 registro con `activo = true` en `chatbot_documentos`; el bot los usa prioritariamente | `PRESET_CONOCIMIENTO_WEB` (envíos, IVA, medios de pago, garantía, curado de mates) |
+
+- **Dos personalidades por contexto:** *Cliente* (cordial, cercano, orientado a venta y cuidado del mate) e *Interno* (ejecutivo, técnico; guía del panel, inventario, pedidos, incidencias). La identidad depende de **dónde está el usuario**, no solo de su rol (ver 14.10).
+- **Detección de placeholder:** compara contra `TEXTO_DEFAULT_UI_CLIENTE` / `TEXTO_DEFAULT_UI_INTERNO` para no tratar el texto de ejemplo como una personalización real.
+- **Datos de respaldo:** aun con documentos cargados, se anexa un recordatorio con los datos críticos (envío $2.650 CLP, IVA 19 %, ruta `/mis-compras`).
+- **Observabilidad:** cada petición registra en consola el modo activo (`CEREBRO_IA` / `PRESET_DEFAULT`) y el número de documentos.
+
+### 14.5 Inyección de Datos en Tiempo Real (Pedidos y Catálogo)
+
+Para minimizar alucinaciones, los datos transaccionales **no se confían a la memoria del modelo**, sino que se inyectan en el *prompt* antes de generar:
+
+- **Pedido (`pedidos`):** al detectar un código se consultan `codigo_pedido, estado, comuna, region, empresa_transporte, numero_seguimiento, total` más `usuario_id` y `email_cliente` para validar la propiedad. El *prompt* fuerza un formato fijo de respuesta con viñetas (📦 Pedido, 🔄 Estado, 📍 Destino, 🚚 Transporte, 🔢 Seguimiento, 💰 Total) y un botón hacia *Mis Compras*. **Solo el dueño del pedido ve sus datos** (ver 14.12); sin sesión se pide iniciar sesión, y un pedido ajeno o inexistente recibe la misma respuesta.
+- **Solo bot de cliente:** esta precarga y la del catálogo se omiten en backoffice, donde los datos se obtienen con herramientas.
+- **Catálogo (`producto`):** ante intención de compra se cargan hasta **15 productos activos** con nombre, categoría, precio en CLP formateado `es-CL`, stock (*"N disponibles"* o *"Agotado"*) y los primeros 90 caracteres de la descripción.
+
+### 14.6 Candado Temático, Herramienta `consultarEstadoPedido` y Persistencia
+
+- **Candado de dominio (siempre activo):** el bot solo responde sobre SuMateCL / GrowderWeb (catálogo, cuidado del mate, precios, stock, rastreo, envíos, pagos y uso de la web). Ante temas ajenos (matemáticas, política, programación, recetas, etc.) responde con un mensaje cordial predefinido que redirige hacia la tienda. Incluye además la regla de **veracidad**: nunca inventar precios, productos ni estados.
+- **Herramienta de respaldo `consultarEstadoPedido`:** definida con `tool()` y esquema `zod` (`codigoPedido: string`). Cubre el caso en que el código llega en un turno distinto al de la detección heurística (p. ej. el usuario lo da tras una pregunta del bot). Normaliza `#`, mayúsculas y prefijo `SM-`, consulta `pedidos` y devuelve un texto con enlace a *Mis Compras*. Solo se habilita cuando no hubo detección previa de código ni de catálogo, para ahorrar pasos y tokens.
+- **Persistencia de historial:** los mensajes se almacenan en `chatbot_mensajes` agrupados por `conversacion_id`; un fallo de escritura se captura sin interrumpir la respuesta al usuario.
+
+### 14.7 Panel Admin "Cerebro de IA" (`/admin/chatbot`) y Extracción de PDF
+
+En [`app/admin/chatbot/page.tsx`](file:///f:/Growder/GROWDER/Desarrollo%20App%20y%20Web/GrowderWeb/app/admin/chatbot/page.tsx), accesible desde un enlace destacado en `AdminTabs`:
+
+- **Directrices de Comportamiento:** dos áreas de texto (Público / Interno) y guardado mediante `upsert` sobre `chatbot_config` (fila única `id = 1`) con marca `updated_at` y mensaje de confirmación temporal.
+- **Base de Conocimiento:** zona *drag-and-click* para subir `.pdf`, `.txt` o `.md`. Los PDF se envían a `/api/admin/chatbot/extraer-pdf`; los de texto se leen en el navegador. El contenido se guarda en `chatbot_documentos` con `activo: true` y la **audiencia** elegida antes de subir (por defecto *Solo clientes*).
+- **Gestión de Documentos:** listado ordenado por fecha con contador, **selector de audiencia por documento** (*Solo clientes*, *Solo equipo (privado)*, *Clientes y equipo*) y eliminación con confirmación.
+- **Acceso:** el enlace *Gestión de IA* vive en el menú superior del backoffice (`AdminHeader`), junto a Catálogo y Bodega.
+- **Extractor de PDF (`extraer-pdf/route.ts`):** runtime `nodejs`, límite de **10 MB**, validación de tipo, extracción con `pdf-parse` (importando el *core* para evitar el bug del archivo de prueba), limpieza de saltos de línea y espacios redundantes para **ahorrar tokens**, y error `422` explícito cuando el PDF es una imagen escaneada sin texto seleccionable.
+- **Identidad visual:** mantiene la paleta GrowderWeb (olivo `#314235`, arena `#f8f3e9`).
+
+### 14.8 Modelo de Datos del Chatbot
+
+| Tabla | Propósito | Campos usados por el código |
+| :--- | :--- | :--- |
+| `chatbot_config` | Configuración global (fila única `id = 1`) | `instrucciones_cliente`, `instrucciones_interno`, `temperatura`, `updated_at` |
+| `chatbot_documentos` | Base de conocimiento | `id`, `titulo`, `contenido`, `activo`, `audiencia` (`cliente` \| `interno` \| `ambos`, migración `supabase/chatbot_audiencia.sql`), `created_at` |
+| `chatbot_mensajes` | Historial de conversaciones | `conversacion_id`, `rol` (`user`/`assistant`), `contenido` |
+
+Variables de entorno requeridas: `AI_GATEWAY_API_KEY`, `NEXT_PUBLIC_SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY`.
+
+### 14.9 Hallazgos de Auditoría y Mejoras Propuestas
+
+**Fortalezas**
+- ✅ **Respuestas ancladas a datos reales** (pedidos y stock) en lugar de memoria del modelo.
+- ✅ **Degradación elegante:** sin configuración, el Preset garantiza un bot funcional desde el primer día.
+- ✅ **Personalización sin despliegues:** el administrador cambia tono y conocimiento desde la web.
+- ✅ **Control de costos:** modelo ligero, salida limitada a 550 tokens, texto de PDF compactado y herramienta habilitada solo cuando hace falta.
+
+**Puntos a reforzar (priorizados)**
+
+| # | Prioridad | Hallazgo | Recomendación |
+| :-: | :---: | :--- | :--- |
+| 1 | 🔴 Alta | `/api/admin/chatbot/extraer-pdf` no valida sesión ni rol; cualquiera con la URL puede usar el extractor. | Verificar JWT y `rol_id ∈ {1,2}` en el *route handler*. |
+| 2 | 🔴 Alta | `/admin/chatbot` escribe `chatbot_config` y `chatbot_documentos` con el cliente de navegador; la protección depende de la UI y de las políticas RLS. | Confirmar RLS que restrinja escritura a roles 1 y 2, o mover las escrituras a un endpoint servidor validado. |
+| 3 | ✅ Resuelto | `/api/chat` usa `SUPABASE_SERVICE_ROLE_KEY` (omite RLS) y consultaba un pedido solo por código, por lo que cualquiera podía enumerar `SM-XXXXXX`. | Implementado: solo el dueño (por `usuario_id` o correo) ve el pedido, respuesta idéntica para inexistente/ajeno y `direccion` retirada de la consulta (ver 14.12). |
+| 4 | 🟠 Media | Sin límite de tasa en `/api/chat`: riesgo de abuso y gasto en tokens. | *Rate limiting* por IP/sesión y tope de longitud del mensaje y del historial. |
+| 5 | 🟠 Media | Inyección de prompt: el contenido de documentos y mensajes se incorpora tal cual al *system prompt*; el candado temático es solo instrucción. | Delimitar documentos como datos, y reforzar con evaluación de casos adversarios. Mitigado en parte: los documentos internos ya no llegan al bot de cliente (14.12) y las acciones sensibles se validan en el servidor (14.11). |
+| 6 | 🟠 Media | Todos los documentos activos se inyectan completos en cada petición; el costo y la latencia crecen con la base de conocimiento. | Fragmentar (*chunking*) y recuperar solo lo relevante (búsqueda por texto o embeddings con `pgvector`). |
+| 7 | 🟡 Baja | La regex de código (`\d{5,8}`) captura cualquier número de 5–8 dígitos (teléfonos, montos) y provoca consultas innecesarias. | Exigir prefijo `SM-` o contexto ("pedido", "código"). |
+| 8 | 🟡 Baja | Inconsistencias menores: la UI acepta `.md` pero el extractor lo rechaza; `temperatura` por defecto 0.7 en el panel vs 0.5 en el API; el preset menciona transferencia bancaria no listada en el checkout; la consulta de catálogo selecciona la columna `categoria` mientras el modelo de datos documenta `categoria_id`. | Unificar valores y validar columnas con el esquema real. |
+| 9 | 🟡 Baja | El historial se guarda pero no se explota. | Vista de conversaciones en el panel admin, métricas de preguntas frecuentes, valoración 👍/👎 y escalamiento a WhatsApp humano. |
+| 10 | 🟡 Baja | Los modelos se invocan con un ID fijo en código. | Parametrizar el modelo en `chatbot_config` o variable de entorno. |
+| 11 | 🟠 Media | Las herramientas de backoffice escriben con la clave de servicio y la confirmación es una heurística (último mensaje corto y afirmativo). | Botón explícito "Confirmar" en el chat o *token* de confirmación de un solo uso; registro de auditoría persistente en base de datos (hoy solo `console.log`). |
+| 12 | 🟠 Media | Siguen abiertas la mayoría de las tablas sin RLS (`pedidos`, `carrito`, `usuario`, `chatbot_*`…). | Activar RLS con políticas por tabla; el borrado de compras y las escrituras del panel desde el navegador necesitarán políticas específicas. |
+
+### 14.10 Doble Identidad por Contexto: Bot de Cliente vs Bot de Backoffice
+
+El mismo endpoint `/api/chat` entrega dos asistentes distintos. La decisión se toma **en el servidor** combinando dónde está el usuario y quién es:
+
+```mermaid
+flowchart TD
+    A["Petición a /api/chat<br/>{ messages, sessionToken, pathname }"] --> B["Verifica sesión con Supabase Auth<br/>y lee usuario.rol_id"]
+    B --> C{"¿pathname empieza con<br/>/admin o /bodega?"}
+    C -- No --> CLI
+    C -- Sí --> D{"¿rol_id ∈ {1, 2}?"}
+    D -- No --> CLI["🧉 BOT DE CLIENTE<br/>catálogo, envíos, rastreo propio"]
+    D -- Sí --> BO["🛠️ BOT DE BACKOFFICE<br/>guía del panel + herramientas"]
+```
+
+| Contexto | Rol | Identidad | Conocimiento | Herramientas |
+| :--- | :---: | :--- | :--- | :--- |
+| Tienda (`/`, `/product`, `/mis-compras`…) | Cualquiera, **incluso Admin** | Asesor de SuMateCL | Preset web o documentos *cliente/ambos* | Solo `consultarEstadoPedido` (pedidos propios) |
+| `/admin`, `/bodega` | 1 Admin, 2 Editor/Bodeguero | Asistente Operativo de GrowderWeb | Guía del backoffice + documentos *interno/ambos* | Consulta y operaciones (14.11) |
+| `/admin`, `/bodega` | 3 Cliente | Asesor de SuMateCL | Igual que en tienda | Igual que en tienda |
+
+- **Un administrador navegando la tienda es tratado como cliente:** el bot de cliente no tiene herramientas de administración ni la guía del panel, y su regla de dominio rechaza temas de gestión.
+- **Un cliente no puede "activar" el modo backoffice** falsificando `pathname`: el servidor exige además el rol verificado con el token de sesión.
+- **Guía del backoffice (`PRESET_CONOCIMIENTO_BACKOFFICE`):** roles y permisos, función de cada pestaña de `/admin` (Inventario, Agregar Producto, Roles, Pedidos, Gestión de IA), ciclo de estados del pedido, panel `/bodega` (inventario, pedidos, avisos de calidad) y problemas frecuentes.
+- **Reglas propias (`candadoBackoffice`):** ámbito limitado a la operación de GrowderWeb, veracidad vía herramientas, protocolo de confirmación, límites explícitos (no elimina productos/pedidos/usuarios ni sube fotos) y el rol del usuario actual inyectado en el *prompt*.
+- **Interfaz coherente:** el widget calcula el mismo contexto (ruta + rol) para mostrar título, bienvenida y botones rápidos (*Agregar producto*, *Stock bajo*, *Pedidos recientes*, *Cambiar rol*) y separa el historial con `useChat({ id })` para no mezclar conversaciones.
+- **Presupuesto:** en backoffice `maxOutputTokens` sube a 800 y `stopWhen` a 6 pasos para permitir encadenar consulta y acción.
+
+### 14.11 Herramientas Operativas del Backoffice y Controles de Seguridad
+
+Disponibles únicamente en modo backoffice (definidas con `tool()` + `zod`, ejecutadas con el cliente de servicio):
+
+| Herramienta | Tipo | Permiso | Descripción |
+| :--- | :---: | :---: | :--- |
+| `buscarProductos` | Lectura | 1, 2 | Busca por nombre o lista stock bajo (< 3 unidades): id, precio, stock, estado, categoría. |
+| `consultarPedido` | Lectura | 1, 2 | Detalle completo de un `SM-XXXXXX` (cliente, destino, pago, guía, productos). |
+| `listarPedidos` | Lectura | 1, 2 | Últimos pedidos, filtrables por estado. |
+| `actualizarProducto` | Escritura | 1, 2 | Modifica precio, stock o `activo` de un producto existente. |
+| `crearProducto` | Escritura | 1, 2 | Crea un producto activo (sin fotos; se agregan en Inventario → Editar). |
+| `cambiarEstadoPedido` | Escritura | 1, 2 | Cambia el estado; *cancelado*/*rechazado* usan la RPC `cancelar_pedido` para restituir el stock. |
+| `cambiarRolUsuario` | Escritura | **Solo 1** | Cambia el rol por correo; no permite modificar el propio rol. |
+
+**Controles aplicados en el servidor (no en el *prompt*):**
+1. **Confirmación obligatoria:** toda escritura devuelve primero *"ACCIÓN PENDIENTE DE CONFIRMACIÓN"* con un resumen exacto; solo se ejecuta si el último mensaje del usuario es corto (≤ 40 caracteres) y afirmativo (`sí`, `confirmo`, `ok`, `dale`…).
+2. **Permisos por rol:** el rol sale del token de sesión; `cambiarRolUsuario` exige `rol_id = 1`.
+3. **Límites duros:** no existen herramientas de borrado ni de subida de archivos.
+4. **Auditoría:** cada acción registra en consola usuario, rol, acción y detalle (`[BACKOFFICE] usuario=… rol=… accion=…`).
+5. **Errores transparentes:** los fallos de Supabase se devuelven tal cual para que el bot informe el resultado real.
+
+### 14.12 Privacidad: Audiencia de Documentos y Pedidos Solo para su Dueño
+
+**Audiencia de documentos (`chatbot_documentos.audiencia`).** Evita que material interno (costos, protocolos, notas) sea citado por el bot de la tienda:
+
+| Valor | Lo ve el bot de cliente | Lo ve el bot de backoffice |
+| :--- | :---: | :---: |
+| `cliente` | ✅ | ❌ |
+| `interno` | ❌ (nunca, ni siquiera un administrador en la tienda) | ✅ |
+| `ambos` | ✅ | ✅ |
+
+- Migración en [`supabase/chatbot_audiencia.sql`](file:///f:/Growder/GROWDER/Desarrollo%20App%20y%20Web/GrowderWeb/supabase/chatbot_audiencia.sql): columna `audiencia text not null default 'ambos'` con `check` de valores; los documentos previos quedan como `ambos` para no alterar el comportamiento.
+- El panel `/admin/chatbot` permite elegir la audiencia al subir y cambiarla después por documento. El servidor tolera la ausencia de la columna (consulta de respaldo) y el panel avisa si falta la migración.
+
+**Pedidos solo para su dueño.** Tanto la precarga automática como la herramienta `consultarEstadoPedido` aplican la misma regla:
+- Sin sesión → se pide iniciar sesión y no se revela ningún dato ni la existencia del código.
+- Con sesión → el pedido se muestra solo si `pedidos.usuario_id = user.id` o `pedidos.email_cliente` coincide con el correo de la cuenta.
+- Pedido inexistente o de otra persona → **misma respuesta** ("no se encontró en tu cuenta"), lo que impide enumerar códigos `SM-XXXXXX`.
+- Un administrador en la vista de tienda también queda sujeto a esta regla; para ver cualquier pedido debe usar el backoffice.
 
 ---
 

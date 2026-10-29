@@ -28,10 +28,10 @@ export default function RootLayout({
         <ProveedorCarrito>
           <AuthProvider>{children}</AuthProvider>
           <CarroDesplegable />
-        </ProveedorCarrito>
 
-        {/* 2. Componente inyectado globalmente */}
-        <ChatFlotante />
+          {/* 2. Componente inyectado globalmente (dentro del proveedor para ocultarse con el carrito abierto) */}
+          <ChatFlotante />
+        </ProveedorCarrito>
       </body>
     </html>
   );
