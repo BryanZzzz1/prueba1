@@ -359,7 +359,7 @@ export default function DetalleProductoPage() {
 
             {enviosAbierto && (
               <p className="text-xs text-stone-600 mt-3 leading-relaxed pl-6">
-                Envíos dentro de la Región Metropolitana llegan entre 24 y 48 horas hábiles. Para regiones, coordinamos mediante Starken o Blue Express asegurando un embalaje protegido para que tu producto llegue intacto.
+                Envíos dentro de la Región Metropolitana llegan entre 24 y 48 horas hábiles. Para regiones, coordinamos el despacho asegurando un embalaje protegido para que tu producto llegue intacto.
               </p>
             )}
           </div>
