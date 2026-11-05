@@ -22,6 +22,8 @@ export function PedidoDetalleModal({
   onActualizarDatosDespacho,
 }: PedidoDetalleModalProps) {
   const resolverFoto = useFotosItems(pedido?.items);
+  // Los precios son netos: el IVA es lo que falta para llegar al total cobrado
+  const ivaPedido = pedido ? Math.max(0, (pedido.total || 0) - (pedido.subtotal || 0) - (pedido.costo_envio || 0)) : 0;
   const [empresa, setEmpresa] = useState(pedido?.empresa_transporte || "");
   const [guia, setGuia] = useState(pedido?.numero_seguimiento || "");
   const [notas, setNotas] = useState(pedido?.notas_despacho || "");
@@ -138,6 +140,12 @@ export function PedidoDetalleModal({
                 <span>Subtotal de productos:</span>
                 <span className="font-semibold text-stone-800">{formatearPrecio(pedido.subtotal)}</span>
               </div>
+              {ivaPedido > 0 && (
+                <div className="flex justify-between items-center">
+                  <span>IVA (19%):</span>
+                  <span className="font-semibold text-stone-800">{formatearPrecio(ivaPedido)}</span>
+                </div>
+              )}
               <div className="flex justify-between items-center">
                 <span>Costo de envío (Tarifa plana Chile):</span>
                 <span className="font-semibold text-stone-800">{formatearPrecio(pedido.costo_envio)}</span>

@@ -36,9 +36,8 @@ export async function POST(req: Request) {
         const costoEnvio = Number(pedido.costo_envio) || 0;
         const total = Number(pedido.total) || 0;
 
-        // Si los precios ya tienen IVA incluido:
-        const neto = Math.round(subtotal / 1.19);
-        const iva = subtotal - neto;
+        // Los precios del catálogo son netos: el IVA se suma al pagar (subtotal + IVA + envío = total)
+        const iva = Math.max(0, total - subtotal - costoEnvio);
 
         // 3. Filas de productos para la tabla HTML
         const itemsHtml = pedido.items
@@ -88,16 +87,12 @@ export async function POST(req: Request) {
             <div style="background-color: #f8f3e9; padding: 20px; border-radius: 12px; margin-bottom: 32px; border: 1px solid rgba(140, 119, 98, 0.2);">
               <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
                 <tr>
-                  <td style="padding: 6px 0; color: #57534e;">Neto:</td>
-                  <td style="padding: 6px 0; text-align: right; color: #1A1A1A;">$${neto.toLocaleString('es-CL')}</td>
+                  <td style="padding: 6px 0; color: #57534e;">Subtotal productos:</td>
+                  <td style="padding: 6px 0; text-align: right; color: #1A1A1A;">$${subtotal.toLocaleString('es-CL')}</td>
                 </tr>
                 <tr>
                   <td style="padding: 6px 0; color: #57534e;">IVA (19%):</td>
                   <td style="padding: 6px 0; text-align: right; color: #1A1A1A;">$${iva.toLocaleString('es-CL')}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 6px 0; color: #57534e;">Subtotal Productos:</td>
-                  <td style="padding: 6px 0; text-align: right; color: #1A1A1A;">$${subtotal.toLocaleString('es-CL')}</td>
                 </tr>
                 <tr style="border-bottom: 1px solid rgba(140, 119, 98, 0.2);">
                   <td style="padding: 6px 0 12px 0; color: #57534e;">Costo de Envío:</td>

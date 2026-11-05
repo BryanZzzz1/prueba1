@@ -69,6 +69,9 @@ export function DetalleCompraView({
     });
   };
 
+  // Los precios son netos: el IVA es lo que falta para llegar al total cobrado
+  const ivaPedido = Math.max(0, (pedido.total || 0) - (pedido.subtotal || 0) - (pedido.costo_envio || 0));
+
   const copiarGuia = () => {
     if (pedido.numero_seguimiento) {
       navigator.clipboard.writeText(pedido.numero_seguimiento);
@@ -250,6 +253,14 @@ export function DetalleCompraView({
                   {formatearPrecio(pedido.subtotal)}
                 </span>
               </div>
+              {ivaPedido > 0 && (
+                <div className="flex justify-between text-stone-600">
+                  <span>IVA (19%):</span>
+                  <span className="font-semibold text-stone-900">
+                    {formatearPrecio(ivaPedido)}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between text-stone-600">
                 <span>Despacho a domicilio (Fijo Chile):</span>
                 <span className="font-semibold text-stone-900">

@@ -36,7 +36,7 @@ Los paneles /admin y /bodega solo se ven en escritorio (pantalla ≥ 1024px).
 
 **Panel /admin (pestañas):**
 - **Inventario en tiempo real:** lista de productos con foto, precio y stock. Botones *Editar* y *Quitar* (pide confirmación). Stock crítico se marca en rojo.
-- **Agregar Producto:** completar nombre, descripción, precio (CLP con IVA incluido), cantidad, categoría (si no existe se crea al escribirla) y hasta 3 fotos. Las fotos se comprimen solas a WebP (máx. 1000px). Se guarda con el botón del formulario.
+- **Agregar Producto:** completar nombre, descripción, precio (CLP neto, sin IVA: el IVA 19% se suma al pagar), cantidad, categoría (si no existe se crea al escribirla) y hasta 3 fotos. Las fotos se comprimen solas a WebP (máx. 1000px). Se guarda con el botón del formulario.
 - **Gestión de Roles:** lista de usuarios; se cambia el rol con el selector y se puede suspender/activar una cuenta (al suspender vuelve a rol 3).
 - **Gestión de Pedidos:** abrir un pedido muestra su detalle; se cambia el estado, se asigna empresa de transporte y número de guía y hay botón directo a WhatsApp del cliente.
 - **Gestión de IA (menú superior):** /admin/chatbot, donde se editan las directrices del bot (cliente / interno) y se suben documentos PDF/TXT de conocimiento.
@@ -51,7 +51,7 @@ Los paneles /admin y /bodega solo se ven en escritorio (pantalla ≥ 1024px).
 const PRESET_CONOCIMIENTO_WEB = `
 === 🌐 CONOCIMIENTO BASE POR DEFECTO DE LA WEB (PRESET SUMATECL) ===
 - **Despachos y Envíos:** Costo fijo de **$2.650 CLP** a todo Chile continental. No menciones empresas de transporte específicas: el despacho lo coordina SuMateCL. El plazo estimado de preparación es de 24 a 48 horas hábiles y la entrega toma entre 2 a 5 días hábiles según la región.
-- **Precios e Impuestos:** Todos los precios publicados en la web están en Pesos Chilenos (CLP) e **incluyen IVA (19%)**.
+- **Precios e Impuestos:** Todos los precios publicados en la web están en Pesos Chilenos (CLP) y son **precios netos (sin IVA)**: el **IVA (19%)** se suma al calcular el total al pagar, junto con el despacho. El resumen de compra muestra subtotal, IVA, despacho y total.
 - **Medios de Pago:** Aceptamos tarjetas de débito, crédito (vía Webpay Plus) y transferencia bancaria directa.
 - **Seguimiento de Compras:** Todo pedido genera un código único con formato **SM-XXXXXX**. El cliente puede ver el detalle completo en la sección [Mis Compras](/mis-compras).
 - **Garantía y Devoluciones:** Si un producto llega con fallas de fábrica o daños de transporte, el cliente puede reportarlo dentro de los primeros 10 días desde la recepción para gestionar cambio o reembolso.
@@ -176,7 +176,7 @@ export async function POST(req: Request) {
         const bloqueConocimientoCliente = tieneDocumentosCargados
             ? `\n\n=== 📚 BASE DE CONOCIMIENTO OFICIAL (DOCUMENTOS CARGADOS EN CEREBRO DE IA) ===\nUsa prioritariamente esta información cargada por el administrador para responder:\n` +
             docs.map(d => `### ${d.titulo}\n${d.contenido}`).join('\n\n') +
-            `\n\n(Datos complementarios de respaldo: Envío estándar $2.650 CLP, precios incluyen IVA 19%, sección de pedidos en /mis-compras).`
+            `\n\n(Datos complementarios de respaldo: Envío estándar $2.650 CLP, los precios son netos y el IVA 19% se suma al pagar, sección de pedidos en /mis-compras).`
             : `\n\n${PRESET_CONOCIMIENTO_WEB}`;
 
         // En backoffice la guía operativa va siempre; los documentos cargados se agregan como apoyo
