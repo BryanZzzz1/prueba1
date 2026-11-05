@@ -14,6 +14,8 @@ interface UsuarioData {
 interface AuthContextType {
   usuario: UsuarioData | null;
   cargando: boolean;
+  /** true solo si el rol se leyó de la base de datos (false = rol provisional por un fallo de lectura). */
+  rolVerificado: boolean;
   isAdmin: boolean;
   isEditor: boolean;
 }
@@ -21,6 +23,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   usuario: null,
   cargando: true,
+  rolVerificado: false,
   isAdmin: false,
   isEditor: false,
 });
@@ -28,6 +31,7 @@ const AuthContext = createContext<AuthContextType>({
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [usuario, setUsuario] = useState<UsuarioData | null>(null);
   const [cargando, setCargando] = useState(true);
+  const [rolVerificado, setRolVerificado] = useState(false);
 
   useEffect(() => {
     async function obtenerDatos(sesionActual?: Session | null) {
@@ -44,7 +48,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           if (data && !error) {
             setUsuario(data as UsuarioData);
+            setRolVerificado(true);
           } else {
+            setRolVerificado(false);
             // El usuario está autenticado mediante su sesión JWT de Supabase Auth.
             // Si aún no se ha sincronizado la fila en public.usuario, se asigna temporalmente
             // el rol base de cliente (3) en memoria de solo lectura para navegación, sin modificar la base de datos desde el cliente.
@@ -58,10 +64,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         } else {
           setUsuario(null);
+          setRolVerificado(false);
         }
       } catch (err) {
         console.error('Error al obtener datos de sesión:', err);
         setUsuario(null);
+        setRolVerificado(false);
       } finally {
         setCargando(false);
       }
@@ -87,6 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         usuario,
         cargando,
+        rolVerificado,
         isAdmin: esAdmin,
         isEditor: esEditor,
       }}

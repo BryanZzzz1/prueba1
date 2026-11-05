@@ -315,12 +315,12 @@ Usuario actual: **${NOMBRE_ROL[rolId] ?? 'Desconocido'}** (rol_id ${rolId}).
                     const codigo = limpio.startsWith('SM-') ? limpio : `SM-${limpio}`;
                     const { data: p } = await supabase
                         .from('pedidos')
-                        .select('codigo_pedido, estado, nombre_cliente, email_cliente, telefono_cliente, region, comuna, direccion, metodo_pago, total, empresa_transporte, numero_seguimiento, items, created_at')
+                        .select('codigo_pedido, estado, nombre_cliente, email_cliente, telefono_cliente, region, comuna, direccion, depto, instrucciones, notas_despacho, metodo_pago, total, empresa_transporte, numero_seguimiento, items, created_at')
                         .eq('codigo_pedido', codigo)
                         .maybeSingle();
                     if (!p) return `No existe el pedido ${codigo}.`;
                     const items = Array.isArray(p.items) ? p.items.map((i: any) => `${i.cantidad}× ${i.nombre}`).join(', ') : 'sin detalle';
-                    return `Pedido ${p.codigo_pedido} | estado: ${p.estado} | cliente: ${p.nombre_cliente} (${p.email_cliente}, ${p.telefono_cliente}) | destino: ${p.direccion}, ${p.comuna}, ${p.region} | pago: ${p.metodo_pago} | total: $${Number(p.total).toLocaleString('es-CL')} | transporte: ${p.empresa_transporte || '—'} | guía: ${p.numero_seguimiento || '—'} | productos: ${items}`;
+                    return `Pedido ${p.codigo_pedido} | estado: ${p.estado} | cliente: ${p.nombre_cliente} (${p.email_cliente}, ${p.telefono_cliente}) | destino: ${p.direccion}, ${p.comuna}, ${p.region} | pago: ${p.metodo_pago} | total: $${Number(p.total).toLocaleString('es-CL')} | transporte: ${p.empresa_transporte || '—'} | guía: ${p.numero_seguimiento || '—'} | indicaciones del cliente: ${p.instrucciones || '—'} | notas de despacho: ${p.notas_despacho || '—'} | productos: ${items}`;
                 },
             }),
 

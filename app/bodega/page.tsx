@@ -1,4 +1,5 @@
 import Link from "next/link";
+import NavegacionBodega from "./components/NavegacionBodega";
 
 export default function BodegaPage() {
   const opciones = [
@@ -105,17 +106,9 @@ export default function BodegaPage() {
   return (
     <main className="min-h-screen bg-[#f6f1e7] px-4 py-8 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
-        {/* VOLVER A TIENDA */}
+        {/* VOLVER: el destino depende del rol (admin → panel; bodeguero/editor → tienda) */}
 
-        <div className="mb-8">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 text-sm font-semibold text-[#5c5a50] transition hover:text-[#314235]"
-          >
-            <span>←</span>
-            <span>Volver a la tienda</span>
-          </Link>
-        </div>
+        <NavegacionBodega />
 
         {/* CABECERA */}
 

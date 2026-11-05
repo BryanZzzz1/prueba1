@@ -49,6 +49,7 @@ export default function AdminPage() {
 
   // Estados de sesión y carga
   const [verificandoAuth, setVerificandoAuth] = useState(true);
+  const [errorVerificacion, setErrorVerificacion] = useState(false);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [cargando, setCargando] = useState(true);
 
@@ -344,8 +345,19 @@ export default function AdminPage() {
         return;
       }
 
-      const { data: userData, error } = await supabase.from("usuario").select("rol_id, activo").eq("id", session.user.id).single();
-      if (error || !userData?.activo || userData?.rol_id === 3) {
+      // El rol se consulta con un reintento: un fallo de red pasajero NO debe sacar a nadie del panel
+      let { data: userData, error } = await supabase.from("usuario").select("rol_id, activo").eq("id", session.user.id).single();
+      if (error) {
+        await new Promise((r) => setTimeout(r, 700));
+        ({ data: userData, error } = await supabase.from("usuario").select("rol_id, activo").eq("id", session.user.id).single());
+      }
+      if (error || !userData) {
+        // No se pudo confirmar el rol: se avisa y se ofrece reintentar, sin expulsar
+        setErrorVerificacion(true);
+        return;
+      }
+      // Rol confirmado: cliente o cuenta suspendida → tienda
+      if (!userData.activo || userData.rol_id === 3) {
         router.replace("/");
         return;
       }
@@ -508,6 +520,21 @@ export default function AdminPage() {
       setStatus("No se pudo eliminar el producto.", "error");
     }
   };
+
+  if (verificandoAuth && errorVerificacion) {
+    return (
+      <div className="min-h-screen bg-[#f8f3e9] flex flex-col items-center justify-center gap-4 p-6 text-center">
+        <h1 className="text-xl font-bold text-stone-900">No pudimos verificar tu rol</h1>
+        <p className="text-sm text-stone-600 max-w-sm">Hubo un problema al leer tu perfil. Revisa tu conexión y vuelve a intentarlo.</p>
+        <div className="flex gap-3">
+          <button type="button" onClick={() => window.location.reload()} className="rounded-full bg-[#314235] px-6 py-3 text-sm font-bold text-white hover:bg-[#243127] cursor-pointer">
+            Reintentar
+          </button>
+          <a href="/" className="rounded-full border border-stone-300 px-6 py-3 text-sm font-bold text-stone-700 hover:bg-stone-50">Ir a la tienda</a>
+        </div>
+      </div>
+    );
+  }
 
   if (verificandoAuth) {
     return (

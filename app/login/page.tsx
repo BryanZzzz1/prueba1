@@ -4,6 +4,7 @@ import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/src/lib/supabase";
+import { rutaInicioPorRol } from "@/src/lib/rutasPorRol";
 
 function LoginForm() {
   const [email, setEmail] = useState("");
@@ -30,7 +31,26 @@ function LoginForm() {
       return;
     }
 
-    router.push(redirect);
+    // Si venía de otra página (p. ej. el pago) se respeta. Si no, el aterrizaje depende del rol:
+    // administrador → /admin, editor/bodeguero → /bodega, cliente → tienda.
+    let destino = redirect;
+    if (!searchParams.has("redirect")) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: perfil } = await supabase
+            .from("usuario")
+            .select("rol_id, activo")
+            .eq("id", user.id)
+            .maybeSingle();
+          if (perfil?.activo) destino = rutaInicioPorRol(perfil.rol_id);
+        }
+      } catch {
+        destino = "/";
+      }
+    }
+
+    router.push(destino);
     router.refresh();
   };
 
