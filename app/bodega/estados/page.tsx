@@ -11,12 +11,15 @@ import { supabase } from "@/src/lib/supabase";
 
 type EstadoPedido =
   | "pendiente"
+  | "pagado"
   | "preparando"
   | "en transporte"
   | "en despacho"
   | "recibido"
   | "problema stock"
-  | "entrega fallida";
+  | "entrega fallida"
+  | "cancelado"
+  | "rechazado";
 
 interface Pedido {
   id: number | string;
@@ -181,10 +184,29 @@ const estadosVisuales: Record<
   EstadoVisual
 > = {
   pendiente: {
-    titulo: "Pedido recibido",
-    subtitulo: "Tu compra fue registrada correctamente",
+    titulo: "Pendiente de pago",
+    subtitulo: "El pedido fue creado y espera el pago",
     descripcion:
-      "Recibimos tu pedido. En breve nuestro equipo comenzará a prepararlo.",
+      "El cliente aún no completa el pago. Si pasan 5 minutos sin pagar, el pedido se cancela solo y el stock vuelve a la tienda.",
+
+    contenedor:
+      "border-stone-300 bg-stone-50",
+    iconoContenedor:
+      "bg-stone-500 text-white",
+    tituloColor: "text-stone-900",
+    descripcionColor: "text-stone-600",
+    etiquetaColor:
+      "bg-white/80 text-stone-600 border-stone-300",
+
+    etiqueta: "Pendiente de pago",
+    icono: iconoCaja,
+  },
+
+  pagado: {
+    titulo: "Pedido recibido",
+    subtitulo: "La compra fue registrada y pagada correctamente",
+    descripcion:
+      "Recibimos el pedido y el pago fue confirmado. En breve nuestro equipo comenzará a prepararlo.",
 
     contenedor:
       "border-[#ded6c8] bg-[#f8f4ec]",
@@ -318,13 +340,92 @@ const estadosVisuales: Record<
     etiqueta: "Entrega pendiente",
     icono: iconoAlerta,
   },
+
+  cancelado: {
+    titulo: "Pedido cancelado",
+    subtitulo: "Este pedido no se concretó",
+    descripcion:
+      "El pedido fue cancelado y el stock volvió a la tienda. Si hubo un cobro, debe gestionarse con la pasarela de pago.",
+
+    contenedor:
+      "border-red-300 bg-red-50",
+    iconoContenedor:
+      "bg-red-600 text-white",
+    tituloColor: "text-red-950",
+    descripcionColor: "text-red-800",
+    etiquetaColor:
+      "border-red-200 bg-white/80 text-red-700",
+
+    etiqueta: "Cancelado",
+    icono: iconoAlerta,
+  },
+
+  rechazado: {
+    titulo: "Pago rechazado",
+    subtitulo: "El banco o la pasarela rechazó el pago",
+    descripcion:
+      "El pago no fue aprobado, no se realizó ningún cargo y el stock volvió a la tienda.",
+
+    contenedor:
+      "border-red-300 bg-red-50",
+    iconoContenedor:
+      "bg-red-600 text-white",
+    tituloColor: "text-red-950",
+    descripcionColor: "text-red-800",
+    etiquetaColor:
+      "border-red-200 bg-white/80 text-red-700",
+
+    etiqueta: "Rechazado",
+    icono: iconoAlerta,
+  },
 };
+
+// Respaldo: si aparece un estado que esta pantalla aún no conoce, se muestra igual
+// (antes la página quedaba en blanco aunque el pedido sí existía).
+function estadoVisualDe(estado: string): EstadoVisual {
+  return (
+    estadosVisuales[estado as EstadoPedido] ?? {
+      titulo: `Estado: ${estado}`,
+      subtitulo: "Estado registrado en el sistema",
+      descripcion:
+        "Este estado no tiene una descripción en la pantalla de seguimiento. Revisa el detalle del pedido en el panel de administración.",
+      contenedor: "border-stone-300 bg-stone-50",
+      iconoContenedor: "bg-stone-500 text-white",
+      tituloColor: "text-stone-900",
+      descripcionColor: "text-stone-600",
+      etiquetaColor:
+        "bg-white/80 text-stone-600 border-stone-300",
+      etiqueta: estado,
+      icono: iconoCaja,
+    }
+  );
+}
+
+// Acepta «SM-123456», «sm-123456», «#SM-123456», «SM123456» o solo «123456»
+function normalizarCodigo(valor: string): string {
+  const limpio = valor
+    .toUpperCase()
+    .replace(/[#\s]/g, "");
+
+  if (/^\d{5,8}$/.test(limpio)) {
+    return `SM-${limpio}`;
+  }
+
+  if (/^SM\d{5,8}$/.test(limpio)) {
+    return `SM-${limpio.slice(2)}`;
+  }
+
+  return limpio;
+}
 
 function indiceNormal(
   estado: EstadoPedido
 ): number {
   switch (estado) {
     case "pendiente":
+    case "pagado":
+    case "cancelado":
+    case "rechazado":
       return 0;
 
     case "preparando":
@@ -365,9 +466,8 @@ export default function SeguimientoPedidoPage() {
   ) => {
     event?.preventDefault();
 
-    const codigoLimpio = codigo
-      .trim()
-      .toUpperCase();
+    const codigoLimpio =
+      normalizarCodigo(codigo);
 
     if (!codigoLimpio) {
       setPedido(null);
@@ -432,7 +532,7 @@ export default function SeguimientoPedidoPage() {
   };
 
   const estadoVisual = pedido
-    ? estadosVisuales[pedido.estado]
+    ? estadoVisualDe(pedido.estado)
     : null;
 
   const indiceActual = pedido
@@ -449,6 +549,10 @@ export default function SeguimientoPedidoPage() {
 
   const entregado =
     pedido?.estado === "recibido";
+
+  const noConcretado =
+    pedido?.estado === "cancelado" ||
+    pedido?.estado === "rechazado";
 
   return (
     <main className="min-h-screen bg-[#f6f1e7] px-4 py-8 sm:px-6 lg:px-8">
@@ -689,6 +793,18 @@ export default function SeguimientoPedidoPage() {
                           true;
 
                         actual = false;
+                      }
+
+                      if (
+                        noConcretado
+                      ) {
+                        completado =
+                          false;
+
+                        actual = false;
+
+                        incidencia =
+                          false;
                       }
 
                       return (
