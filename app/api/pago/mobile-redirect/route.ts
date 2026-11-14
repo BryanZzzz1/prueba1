@@ -22,6 +22,17 @@ async function procesarRedireccion(request: Request, esPost: boolean) {
     }
   }
 
+  // Webpay devuelve token_ws / TBK_TOKEN por POST (en el cuerpo, no en la URL).
+  // Se redirige (303) a la misma ruta por GET con los parámetros en la URL, para que el
+  // navegador integrado de la app pueda leerlos y volver a la app.
+  if (esPost && (token_ws || tbk_token)) {
+    const destino = new URL(request.url);
+    destino.search = '';
+    if (token_ws) destino.searchParams.set('token_ws', token_ws);
+    if (tbk_token) destino.searchParams.set('TBK_TOKEN', tbk_token);
+    return NextResponse.redirect(destino, 303);
+  }
+
   let targetUrl = '';
 
   // 3. Evaluamos de quién es el pago y construimos el Deep Link
